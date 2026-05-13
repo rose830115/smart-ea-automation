@@ -12,7 +12,6 @@ from typing import Any
 
 import streamlit as st
 from openpyxl import load_workbook
-from streamlit_javascript import st_javascript
 
 from smart_ea_automation import run_automation
 
@@ -122,37 +121,17 @@ def yims_login_ready(account: str = "", password: str = "") -> bool:
     return bool(account.strip() and password)
 
 
-def browser_yims_login(account: str, password: str) -> str | None:
-    account_esc = account.replace("'", "\\'")
-    password_esc = password.replace("'", "\\'")
-    js = f"""
-    await (async () => {{
-      try {{
-        const resp = await fetch('https://mrc.ycmproducts.com/api/lab_admins/login', {{
-          method: 'POST',
-          headers: {{
-            'Content-Type': 'application/json',
-            'Accept': 'application/json, text/plain, */*',
-            'X-Requested-With': 'XMLHttpRequest'
-          }},
-          body: JSON.stringify({{
-            account: '{account_esc}',
-            password: '{password_esc}',
-            login_platform: 'mrc'
-          }})
-        }});
-        if (!resp.ok) return 'ERROR:HTTP_' + resp.status;
-        const data = await resp.json();
-        return data?.data?.token || 'ERROR:no_token';
-      }} catch(e) {{
-        return 'ERROR:' + e.message;
-      }}
-    }})()
-    """
-    result = st_javascript(js)
-    if result and not str(result).startswith("ERROR"):
-        return str(result)
-    return str(result) if result else None
+@st.cache_resource(show_spinner=False)
+def install_chromium() -> None:
+    subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True,
+    )
+
+
+def playwright_yims_login(account: str, password: str) -> str:
+    from yims_playwright_login import playwright_login
+    return playwright_login(account, password)
 
 
 def check_password() -> bool:
@@ -233,6 +212,8 @@ st.set_page_config(page_title="MRC Smart EA Tool", layout="wide")
 if not check_password():
     st.stop()
 
+install_chromium()
+
 if st.session_state.get("comment_generator_version") != COMMENT_GENERATOR_VERSION:
     st.session_state.pop("last_generated_comments", None)
     st.session_state.pop("last_comments_path", None)
@@ -260,13 +241,13 @@ with st.sidebar:
         yims_account = st.text_input("YIMS 帳號")
         yims_password = st.text_input("YIMS 密碼", type="password")
         if st.button("登入 YIMS", use_container_width=True, disabled=not (yims_account and yims_password)):
-            result = browser_yims_login(yims_account, yims_password)
-            if result and not result.startswith("ERROR"):
-                st.session_state["yims_browser_token"] = result
-                st.success("YIMS 登入成功")
-                st.rerun()
-            else:
-                st.error(f"YIMS 登入失敗：{result}")
+            with st.spinner("正在登入 YIMS，請稍候..."):
+                try:
+                    token = playwright_yims_login(yims_account, yims_password)
+                    st.session_state["yims_browser_token"] = token
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"YIMS 登入失敗：{e}")
 
 source_ready = False
 vendor_path: Path | None = None
