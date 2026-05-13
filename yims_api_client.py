@@ -360,6 +360,9 @@ class YimsApiClient:
                 raw_charts["overall_mold_risk"] = chart_data
 
         risk_data["raw_charts"] = raw_charts
+        risk_data["debug_item_types"] = [
+            item.get("type") for item in print_data if isinstance(item, dict)
+        ]
         return risk_data
 
 
