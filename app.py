@@ -220,34 +220,34 @@ if st.session_state.get("comment_generator_version") != COMMENT_GENERATOR_VERSIO
     st.session_state["comment_generator_version"] = COMMENT_GENERATOR_VERSION
 
 st.title("MRC Smart EA 小工具")
-st.caption("案件資料整理、環境評論草稿、後台輸入資料包與 YIMS 填表")
+st.caption("案件資料整理、環境評論草稿、後台輸入資料包與後台填表")
 
 with st.sidebar:
     st.header("案件設定")
     case_name_input = st.text_input("案件名稱", value="SEA_test")
     case_name = sanitize_case_name(case_name_input)
-    yims_order_id = st.text_input("YIMS 案件代號", value="", help="用於開啟 YIMS 並填入後台資料。")
+    yims_order_id = st.text_input("後台案件代號", value="", help="用於填入後台資料。")
 
     st.divider()
-    st.header("YIMS 登入")
+    st.header("後台登入")
     if st.session_state.get("yims_browser_token"):
-        st.success("YIMS 已登入")
-        if st.button("登出 YIMS", use_container_width=True):
+        st.success("後台已登入")
+        if st.button("登出後台", use_container_width=True):
             st.session_state.pop("yims_browser_token", None)
             st.rerun()
         yims_account = ""
         yims_password = ""
     else:
-        yims_account = st.text_input("YIMS 帳號")
-        yims_password = st.text_input("YIMS 密碼", type="password")
-        if st.button("登入 YIMS", use_container_width=True, disabled=not (yims_account and yims_password)):
-            with st.spinner("正在登入 YIMS，請稍候..."):
+        yims_account = st.text_input("後台帳號")
+        yims_password = st.text_input("後台密碼", type="password")
+        if st.button("登入後台", use_container_width=True, disabled=not (yims_account and yims_password)):
+            with st.spinner("正在登入後台，請稍候..."):
                 token, screenshots, error = playwright_yims_login(yims_account, yims_password)
             if token:
                 st.session_state["yims_browser_token"] = token
                 st.rerun()
             else:
-                st.error(f"YIMS 登入失敗：{error}")
+                st.error(f"後台登入失敗：{error}")
                 import base64
                 for i, shot_b64 in enumerate(screenshots):
                     st.image(base64.b64decode(shot_b64), caption=f"截圖 {i+1}")
@@ -277,7 +277,7 @@ if source_ready and vendor_path and outdir:
     st.subheader("準備執行")
     st.write(f"案件名稱：`{case_name}`")
     st.write(f"輸出位置：`{outdir}`")
-    st.caption("這一步只整理資料與產生檔案；YIMS 後台輸入會在處理完成後，於下方的 YIMS 區塊另外執行。")
+    st.caption("這一步只整理資料與產生檔案；後台輸入會在處理完成後，於下方的後台區塊另外執行。")
 
     run_button = st.button("開始處理案件", type="primary", use_container_width=True)
     if run_button:
@@ -319,19 +319,19 @@ if result:
     with download_cols[1]:
         show_download(paths["validation_report"], "下載比對報告")
 
-    st.subheader("YIMS 後台輸入")
-    st.info("下方按鈕改用 YIMS 後台 API，不開瀏覽器。檢查只驗證登入、案件、資料包與送出格式；勾選確認後才會寫入 YIMS。")
+    st.subheader("後台輸入")
+    st.info("下方按鈕改用後台 API，不開瀏覽器。檢查只驗證登入、案件、資料包與送出格式；勾選確認後才會寫入後台。")
 
     if not yims_order_id.strip():
-        st.warning("請先在左側輸入 YIMS 案件代號，才能執行後台填表。")
+        st.warning("請先在左側輸入後台案件代號，才能執行後台填表。")
     else:
         login_ready = yims_login_ready(yims_account, yims_password)
         if not login_ready:
-            st.warning("請在左側輸入 YIMS 帳號與密碼。")
+            st.warning("請在左側輸入後台帳號與密碼。")
         yims_cols = st.columns(2)
         with yims_cols[0]:
-            if st.button("檢查 YIMS API（不儲存）", use_container_width=True):
-                with st.spinner("正在檢查 YIMS API、案件資料與送出格式..."):
+            if st.button("檢查後台（不儲存）", use_container_width=True):
+                with st.spinner("正在檢查後台、案件資料與送出格式..."):
                     try:
                         yims_result = run_yims_bot(
                             yims_order_id.strip(),
@@ -343,11 +343,11 @@ if result:
                         )
                         st.session_state["last_yims_result"] = yims_result
                     except subprocess.TimeoutExpired:
-                        st.error("YIMS 填表逾時。請確認網路與案件代號。")
+                        st.error("後台填表逾時。請確認網路與案件代號。")
         with yims_cols[1]:
-            confirm_save = st.checkbox("我確認要儲存到 YIMS")
-            if st.button("API 快速儲存到 YIMS", type="primary", use_container_width=True, disabled=not confirm_save):
-                with st.spinner("正在透過 YIMS API 儲存..."):
+            confirm_save = st.checkbox("我確認要儲存到後台")
+            if st.button("快速儲存到後台", type="primary", use_container_width=True, disabled=not confirm_save):
+                with st.spinner("正在透過後台 API 儲存..."):
                     try:
                         yims_result = run_yims_bot(
                             yims_order_id.strip(),
@@ -359,22 +359,22 @@ if result:
                         )
                         st.session_state["last_yims_result"] = yims_result
                     except subprocess.TimeoutExpired:
-                        st.error("YIMS 儲存逾時。請到後台確認是否已儲存。")
+                        st.error("後台儲存逾時。請到後台確認是否已儲存。")
 
     yims_result = st.session_state.get("last_yims_result")
     if yims_result:
         if yims_result["returncode"] == 0:
-            st.success("YIMS 動作完成。")
+            st.success("後台動作完成。")
             if yims_result["save"]:
-                st.write("這次已透過 YIMS API 儲存。")
+                st.write("這次已透過後台 API 儲存。")
             else:
-                st.write("這次只有檢查 API 與資料包，沒有儲存到 YIMS。")
+                st.write("這次只有檢查後台與資料包，沒有儲存到後台。")
         else:
-            st.error("YIMS 動作失敗。")
+            st.error("後台動作失敗。")
             st.code(yims_result["stderr"] or yims_result["stdout"], language="text")
-            st.warning("若錯誤內容提到尚未登入，請先在工具主機終端機手動登入一次 YIMS，或設定 YIMS_ACCOUNT / YIMS_PASSWORD。")
+            st.warning("若錯誤內容提到尚未登入，請先在工具主機終端機手動登入一次後台，或設定 YIMS_ACCOUNT / YIMS_PASSWORD。")
 
-        with st.expander("YIMS 執行紀錄"):
+        with st.expander("後台執行紀錄"):
             st.code(yims_result["command"], language="bash")
             st.code(yims_result["stdout"] + yims_result["stderr"], language="text")
 
@@ -396,7 +396,7 @@ if result:
             except Exception:
                 st.warning("風險數據 JSON 讀取失敗，請手動填入下方數值。")
         else:
-            st.warning("尚未抓取到後台風險數據（請先執行 YIMS 填表）。可手動填入下方數值。")
+            st.warning("尚未抓取到後台風險數據（請先執行後台填表）。可手動填入下方數值。")
 
         # Show report settings screenshot if available
         risk_screenshot = risk_data.get("risk_screenshot")
