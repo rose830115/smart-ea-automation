@@ -374,9 +374,6 @@ if result:
             st.code(yims_result["stderr"] or yims_result["stdout"], language="text")
             st.warning("若錯誤內容提到尚未登入，請先在工具主機終端機手動登入一次後台，或設定 YIMS_ACCOUNT / YIMS_PASSWORD。")
 
-        with st.expander("後台執行紀錄"):
-            st.code(yims_result["command"], language="bash")
-            st.code(yims_result["stdout"] + yims_result["stderr"], language="text")
 
     # -----------------------------------------------------------------------
     # Phase 3: Generate comments using ChatGPT after YIMS risk data is ready
