@@ -152,7 +152,7 @@ def browser_yims_login(account: str, password: str) -> str | None:
     result = st_javascript(js)
     if result and not str(result).startswith("ERROR"):
         return str(result)
-    return None
+    return str(result) if result else None
 
 
 def check_password() -> bool:
@@ -260,13 +260,13 @@ with st.sidebar:
         yims_account = st.text_input("YIMS 帳號")
         yims_password = st.text_input("YIMS 密碼", type="password")
         if st.button("登入 YIMS", use_container_width=True, disabled=not (yims_account and yims_password)):
-            token = browser_yims_login(yims_account, yims_password)
-            if token:
-                st.session_state["yims_browser_token"] = token
+            result = browser_yims_login(yims_account, yims_password)
+            if result and not result.startswith("ERROR"):
+                st.session_state["yims_browser_token"] = result
                 st.success("YIMS 登入成功")
                 st.rerun()
             else:
-                st.error("YIMS 登入失敗，請確認帳號密碼")
+                st.error(f"YIMS 登入失敗：{result}")
 
 source_ready = False
 vendor_path: Path | None = None
