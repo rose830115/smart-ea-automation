@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 import requests
+try:
+    import cloudscraper
+    _HAS_CLOUDSCRAPER = True
+except ImportError:
+    _HAS_CLOUDSCRAPER = False
 
 from yims_payload_builder import build_yims_extends_data, load_comments
 
@@ -126,7 +131,7 @@ class YimsApiClient:
     def __init__(self, base_url: str = BASE_URL, auth_state: Path = AUTH_STATE) -> None:
         self.base_url = base_url.rstrip("/")
         self.auth_state = auth_state
-        self.session = requests.Session()
+        self.session = cloudscraper.create_scraper() if _HAS_CLOUDSCRAPER else requests.Session()
         self.token: str | None = None
         self.user: dict[str, Any] | None = None
         self.session.headers.update(
