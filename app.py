@@ -21,6 +21,8 @@ DEFAULT_OUTPUT_ROOT = PROJECT_DIR / "web_outputs"
 UPLOAD_ROOT = PROJECT_DIR / "uploads"
 COMMENT_GENERATOR_VERSION = "cross-zone-overall-20260513-v3"
 
+IS_CLOUD = str(PROJECT_DIR).startswith("/mount/src")
+
 VENDOR_SHEETS = {"Raw Material warehouse", "Production Line", "Finished Goods Warehouse"}
 TARGET_HINT_SHEETS = {"Areas", "Env. Data", "Moisture", "CFU"}
 
@@ -281,52 +283,65 @@ if result:
         show_download(paths["validation_report"], "下載比對報告")
 
     st.subheader("YIMS 後台輸入")
-    yims_cmd = (
-        f"python yims_api_client.py --payload {paths['backend_payload']} "
-        f"--order-id {yims_order_id or '<YIMS案件代號>'} "
-        "--save"
-    )
-    st.code(yims_cmd, language="bash")
-    st.info("下方按鈕改用 YIMS 後台 API，不開瀏覽器。檢查只驗證登入、案件、資料包與送出格式；勾選確認後才會寫入 YIMS。")
 
-    if not yims_order_id.strip():
-        st.warning("請先在左側輸入 YIMS 案件代號，才能執行後台填表。")
+    if IS_CLOUD:
+        yims_cmd = (
+            f"python yims_api_client.py --payload <後台輸入 JSON 路徑> "
+            f"--order-id <YIMS案件代號> "
+            "--save"
+        )
+        st.code(yims_cmd, language="bash")
+        st.warning(
+            "YIMS 寫入功能僅支援公司內網環境，雲端版無法連線到 YIMS 後台。\n\n"
+            "請下載上方的「後台輸入 JSON」，回到公司電腦用本機版工具執行 YIMS 填表。"
+        )
     else:
-        login_ready = yims_login_ready(yims_account, yims_password)
-        if not login_ready:
-            st.warning("目前這台工具主機尚未登入 YIMS。請在左側輸入 YIMS 帳號與密碼，或先完成一次主機端登入。")
-        yims_cols = st.columns(2)
-        with yims_cols[0]:
-            if st.button("檢查 YIMS API（不儲存）", use_container_width=True):
-                with st.spinner("正在檢查 YIMS API、案件資料與送出格式..."):
-                    try:
-                        yims_result = run_yims_bot(
-                            yims_order_id.strip(),
-                            paths,
-                            result["outdir"],
-                            save=False,
-                            account=yims_account,
-                            password=yims_password,
-                        )
-                        st.session_state["last_yims_result"] = yims_result
-                    except subprocess.TimeoutExpired:
-                        st.error("YIMS 填表逾時。請確認網路、登入狀態與案件代號。")
-        with yims_cols[1]:
-            confirm_save = st.checkbox("我確認要儲存到 YIMS")
-            if st.button("API 快速儲存到 YIMS", type="primary", use_container_width=True, disabled=not confirm_save):
-                with st.spinner("正在透過 YIMS API 儲存..."):
-                    try:
-                        yims_result = run_yims_bot(
-                            yims_order_id.strip(),
-                            paths,
-                            result["outdir"],
-                            save=True,
-                            account=yims_account,
-                            password=yims_password,
-                        )
-                        st.session_state["last_yims_result"] = yims_result
-                    except subprocess.TimeoutExpired:
-                        st.error("YIMS 儲存逾時。請到後台確認是否已儲存。")
+        yims_cmd = (
+            f"python yims_api_client.py --payload {paths['backend_payload']} "
+            f"--order-id {yims_order_id or '<YIMS案件代號>'} "
+            "--save"
+        )
+        st.code(yims_cmd, language="bash")
+        st.info("下方按鈕改用 YIMS 後台 API，不開瀏覽器。檢查只驗證登入、案件、資料包與送出格式；勾選確認後才會寫入 YIMS。")
+
+        if not yims_order_id.strip():
+            st.warning("請先在左側輸入 YIMS 案件代號，才能執行後台填表。")
+        else:
+            login_ready = yims_login_ready(yims_account, yims_password)
+            if not login_ready:
+                st.warning("目前這台工具主機尚未登入 YIMS。請在左側輸入 YIMS 帳號與密碼，或先完成一次主機端登入。")
+            yims_cols = st.columns(2)
+            with yims_cols[0]:
+                if st.button("檢查 YIMS API（不儲存）", use_container_width=True):
+                    with st.spinner("正在檢查 YIMS API、案件資料與送出格式..."):
+                        try:
+                            yims_result = run_yims_bot(
+                                yims_order_id.strip(),
+                                paths,
+                                result["outdir"],
+                                save=False,
+                                account=yims_account,
+                                password=yims_password,
+                            )
+                            st.session_state["last_yims_result"] = yims_result
+                        except subprocess.TimeoutExpired:
+                            st.error("YIMS 填表逾時。請確認網路、登入狀態與案件代號。")
+            with yims_cols[1]:
+                confirm_save = st.checkbox("我確認要儲存到 YIMS")
+                if st.button("API 快速儲存到 YIMS", type="primary", use_container_width=True, disabled=not confirm_save):
+                    with st.spinner("正在透過 YIMS API 儲存..."):
+                        try:
+                            yims_result = run_yims_bot(
+                                yims_order_id.strip(),
+                                paths,
+                                result["outdir"],
+                                save=True,
+                                account=yims_account,
+                                password=yims_password,
+                            )
+                            st.session_state["last_yims_result"] = yims_result
+                        except subprocess.TimeoutExpired:
+                            st.error("YIMS 儲存逾時。請到後台確認是否已儲存。")
 
     yims_result = st.session_state.get("last_yims_result")
     if yims_result:
