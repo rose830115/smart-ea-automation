@@ -12,6 +12,7 @@ from typing import Any
 
 import streamlit as st
 from openpyxl import load_workbook
+from streamlit_javascript import st_javascript
 
 from smart_ea_automation import run_automation
 
@@ -114,9 +115,44 @@ def run_case(case_name: str, vendor_path: Path, target_path: Path | None, outdir
 
 
 def yims_login_ready(account: str = "", password: str = "") -> bool:
+    if st.session_state.get("yims_browser_token"):
+        return True
     if "YIMS_ACCOUNT" in st.secrets and "YIMS_PASSWORD" in st.secrets:
         return True
     return bool(account.strip() and password)
+
+
+def browser_yims_login(account: str, password: str) -> str | None:
+    account_esc = account.replace("'", "\\'")
+    password_esc = password.replace("'", "\\'")
+    js = f"""
+    await (async () => {{
+      try {{
+        const resp = await fetch('https://mrc.ycmproducts.com/api/lab_admins/login', {{
+          method: 'POST',
+          headers: {{
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, text/plain, */*',
+            'X-Requested-With': 'XMLHttpRequest'
+          }},
+          body: JSON.stringify({{
+            account: '{account_esc}',
+            password: '{password_esc}',
+            login_platform: 'mrc'
+          }})
+        }});
+        if (!resp.ok) return 'ERROR:HTTP_' + resp.status;
+        const data = await resp.json();
+        return data?.data?.token || 'ERROR:no_token';
+      }} catch(e) {{
+        return 'ERROR:' + e.message;
+      }}
+    }})()
+    """
+    result = st_javascript(js)
+    if result and not str(result).startswith("ERROR"):
+        return str(result)
+    return None
 
 
 def check_password() -> bool:
@@ -161,11 +197,13 @@ def run_yims_bot(
         cmd.append("--save")
 
     env = os.environ.copy()
-    if "YIMS_ACCOUNT" in st.secrets:
+    if st.session_state.get("yims_browser_token"):
+        env["YIMS_TOKEN"] = st.session_state["yims_browser_token"]
+    elif "YIMS_ACCOUNT" in st.secrets:
         env["YIMS_ACCOUNT"] = str(st.secrets["YIMS_ACCOUNT"])
-    if "YIMS_PASSWORD" in st.secrets:
-        env["YIMS_PASSWORD"] = str(st.secrets["YIMS_PASSWORD"])
-    if account.strip() and password:
+        if "YIMS_PASSWORD" in st.secrets:
+            env["YIMS_PASSWORD"] = str(st.secrets["YIMS_PASSWORD"])
+    elif account.strip() and password:
         env["YIMS_ACCOUNT"] = account.strip()
         env["YIMS_PASSWORD"] = password
 
@@ -211,17 +249,24 @@ with st.sidebar:
 
     st.divider()
     st.header("YIMS 登入")
-    if "YIMS_ACCOUNT" in st.secrets and "YIMS_PASSWORD" in st.secrets:
-        st.success("YIMS 已可執行")
+    if st.session_state.get("yims_browser_token"):
+        st.success("YIMS 已登入")
+        if st.button("登出 YIMS", use_container_width=True):
+            st.session_state.pop("yims_browser_token", None)
+            st.rerun()
         yims_account = ""
         yims_password = ""
     else:
         yims_account = st.text_input("YIMS 帳號")
         yims_password = st.text_input("YIMS 密碼", type="password")
-        if yims_login_ready(yims_account, yims_password):
-            st.success("YIMS 已可執行")
-        else:
-            st.warning("尚未有 YIMS 登入狀態")
+        if st.button("登入 YIMS", use_container_width=True, disabled=not (yims_account and yims_password)):
+            token = browser_yims_login(yims_account, yims_password)
+            if token:
+                st.session_state["yims_browser_token"] = token
+                st.success("YIMS 登入成功")
+                st.rerun()
+            else:
+                st.error("YIMS 登入失敗，請確認帳號密碼")
 
 source_ready = False
 vendor_path: Path | None = None

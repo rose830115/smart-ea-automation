@@ -231,6 +231,17 @@ class YimsApiClient:
         self.write_auth_state()
 
     def ensure_authenticated(self, account: str = "", password: str = "") -> None:
+        # Accept pre-obtained token from browser-side login
+        env_token = os.getenv("YIMS_TOKEN")
+        if env_token:
+            self.token = env_token
+            self.apply_auth_headers()
+            try:
+                self.request_json("POST", "/api/lab_admins/is_login")
+                return
+            except requests.RequestException:
+                pass
+
         self.load_auth_state()
         if self.token:
             try:
