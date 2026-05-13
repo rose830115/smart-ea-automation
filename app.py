@@ -129,9 +129,9 @@ def install_chromium() -> None:
     )
 
 
-def playwright_yims_login(account: str, password: str) -> str:
-    from yims_playwright_login import playwright_login
-    return playwright_login(account, password)
+def playwright_yims_login(account: str, password: str) -> tuple[str | None, list, str | None]:
+    from yims_playwright_login import login_with_debug
+    return login_with_debug(account, password)
 
 
 def check_password() -> bool:
@@ -242,12 +242,15 @@ with st.sidebar:
         yims_password = st.text_input("YIMS 密碼", type="password")
         if st.button("登入 YIMS", use_container_width=True, disabled=not (yims_account and yims_password)):
             with st.spinner("正在登入 YIMS，請稍候..."):
-                try:
-                    token = playwright_yims_login(yims_account, yims_password)
-                    st.session_state["yims_browser_token"] = token
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"YIMS 登入失敗：{e}")
+                token, screenshots, error = playwright_yims_login(yims_account, yims_password)
+            if token:
+                st.session_state["yims_browser_token"] = token
+                st.rerun()
+            else:
+                st.error(f"YIMS 登入失敗：{error}")
+                import base64
+                for i, shot_b64 in enumerate(screenshots):
+                    st.image(base64.b64decode(shot_b64), caption=f"截圖 {i+1}")
 
 source_ready = False
 vendor_path: Path | None = None
