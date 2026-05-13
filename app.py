@@ -316,10 +316,7 @@ if result:
     with download_cols[0]:
         show_download(paths["standardized_workbook"], "下載整理後 Excel")
         show_download(paths["formula_workbook"], "下載公式保留版 Excel")
-        show_download(paths["backend_payload"], "下載後台輸入 JSON")
     with download_cols[1]:
-        show_download(paths["yims_fill_plan_json"], "下載 YIMS 填表計畫 JSON")
-        show_download(paths["yims_fill_plan_md"], "下載 YIMS 填表計畫 Markdown")
         show_download(paths["validation_report"], "下載比對報告")
 
     st.subheader("YIMS 後台輸入")
@@ -396,14 +393,6 @@ if result:
             try:
                 risk_data = json.loads(risk_json_path.read_text(encoding="utf-8"))
                 st.success(f"已從後台自動抓取風險數據：`{risk_json_path.name}`")
-                with st.expander("🔍 DEBUG：YIMS 回傳的 raw_charts（確認後刪除）", expanded=True):
-                    raw_charts = risk_data.get("raw_charts", {})
-                    if raw_charts:
-                        st.json(raw_charts)
-                    else:
-                        st.warning("raw_charts 是空的，代表 get_print_data 沒有找到對應的 item type。")
-                        st.write("以下是 print_data 所有 item_type：")
-                        st.json(risk_data)
             except Exception:
                 st.warning("風險數據 JSON 讀取失敗，請手動填入下方數值。")
         else:
