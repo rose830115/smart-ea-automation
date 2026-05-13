@@ -66,6 +66,21 @@ def parse_float(value: Any) -> float | None:
         return None
 
 
+def _extract_chart_rows(chart_obj: Any) -> list:
+    """Extract row list from a YIMS chart object, trying common nesting paths."""
+    if not isinstance(chart_obj, dict):
+        return []
+    # Try chart_item.en (some chart types use this wrapper)
+    chart_item = chart_obj.get("chart_item")
+    if isinstance(chart_item, dict):
+        rows = chart_item.get("en") or chart_item.get("zh") or []
+        if isinstance(rows, list) and rows:
+            return rows
+    # Fall back to direct en / zh key
+    rows = chart_obj.get("en") or chart_obj.get("zh") or []
+    return rows if isinstance(rows, list) else []
+
+
 def chart_rows_to_zone_risk(rows: list[Any]) -> dict[str, float | None]:
     risks: dict[str, float | None] = {"RMW": None, "PL": None, "FGW": None}
     for row in rows[1:]:
@@ -344,18 +359,17 @@ class YimsApiClient:
             if item_type == "overall_environmental_risk_analysis_line_chart" and isinstance(chart_data, dict):
                 env_chart = chart_data.get("environmental_mold_risk")
                 if isinstance(env_chart, dict):
-                    chart_item = env_chart.get("chart_item", {})
-                    rows = chart_item.get("en", []) if isinstance(chart_item, dict) else []
+                    rows = _extract_chart_rows(env_chart)
                     risk_data["env_risk"] = chart_rows_to_zone_risk(rows)
                     raw_charts["environmental_mold_risk"] = env_chart
 
             elif item_type == "overall_microbiological_risk_analysis" and isinstance(chart_data, dict):
-                rows = chart_data.get("en", [])
+                rows = _extract_chart_rows(chart_data)
                 risk_data["micro_risk"] = chart_rows_to_zone_risk(rows)
                 raw_charts["microbiological_risk"] = chart_data
 
             elif item_type == "overall_mold_risk_detection_result" and isinstance(chart_data, dict):
-                rows = chart_data.get("en", [])
+                rows = _extract_chart_rows(chart_data)
                 risk_data["overall_risk"] = chart_rows_to_zone_risk(rows)
                 raw_charts["overall_mold_risk"] = chart_data
 
