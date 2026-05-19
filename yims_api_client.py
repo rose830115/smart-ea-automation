@@ -5,6 +5,7 @@ import copy
 import json
 import os
 import statistics
+import sys
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -227,7 +228,12 @@ class YimsApiClient:
     def request_json(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         self.apply_auth_headers(kwargs.pop("referer", None))
         response = self.session.request(method, f"{self.base_url}{path}", timeout=30, **kwargs)
-        response.raise_for_status()
+        if not response.ok:
+            body_preview = (response.text or "")[:500].replace("\n", " ")
+            raise requests.HTTPError(
+                f"{response.status_code} {response.reason} for {method} {path} | body: {body_preview}",
+                response=response,
+            )
         return response.json()
 
     def login(self, account: str, password: str) -> None:
