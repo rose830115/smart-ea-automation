@@ -155,6 +155,42 @@ def display_cp(value: Any) -> Any:
     return key
 
 
+def normalize_area_name(value: Any) -> str:
+    text = clean_text(value)
+    if not text:
+        return ""
+    if re.fullmatch(r"\d+", text):
+        return f"Area {int(text)}"
+    return text
+
+
+def normalize_swab_key(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, int):
+        return str(value)
+    text = clean_text(value).casefold()
+    if not text:
+        return ""
+    for prefix in ("swab", "sw", "s", "#"):
+        if text.startswith(prefix):
+            rest = text[len(prefix):].lstrip(" -_")
+            if re.fullmatch(r"\d+", rest):
+                return rest
+            if re.fullmatch(r"[a-z]\d+", rest):
+                return rest
+            break
+    if re.fullmatch(r"\d+", text):
+        return text
+    if re.fullmatch(r"[a-z]\d+", text):
+        return text
+    return text
+
+
 def safe_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -229,10 +265,10 @@ def read_reference(target_path: Path | None) -> ReferenceData:
         for row in ws.iter_rows(min_row=2, values_only=True):
             cp, report_area = row[0], row[1]
             if cp is not None and report_area is not None:
-                area_by_cp[cp_key(cp)] = clean_text(report_area)
+                area_by_cp[cp_key(cp)] = normalize_area_name(report_area)
             area, function, zone = row[3], row[4], row[5]
             if area is not None and zone is not None:
-                area_info[clean_text(area)] = {
+                area_info[normalize_area_name(area)] = {
                     "function": clean_text(function),
                     "zone": clean_text(zone),
                 }
@@ -262,7 +298,7 @@ def read_reference(target_path: Path | None) -> ReferenceData:
                 cfu_class_by_object[object_key(obj)] = clean_text(cls)
             swab, count = row.get("Swab"), safe_float(row.get("Count"))
             if swab is not None and count is not None:
-                count_by_swab[cp_key(swab)] = count
+                count_by_swab[normalize_swab_key(swab)] = count
 
     if "Env. Data" in wb.sheetnames:
         target_tables["Env. Data"] = read_table(wb["Env. Data"], ENV_HEADERS)
@@ -274,7 +310,7 @@ def read_reference(target_path: Path | None) -> ReferenceData:
                 continue
             swab, count = row[100], safe_float(row[101])
             if swab is not None and count is not None:
-                count_by_swab[cp_key(swab)] = count
+                count_by_swab[normalize_swab_key(swab)] = count
 
     if "菌落計數表" in wb.sheetnames:
         ws = wb["菌落計數表"]
@@ -282,7 +318,7 @@ def read_reference(target_path: Path | None) -> ReferenceData:
             swab = ws.cell(2, col).value
             if swab is None:
                 continue
-            swab_key = cp_key(swab)
+            swab_key = normalize_swab_key(swab)
             total = 0.0
             for row in range(3, ws.max_row + 1):
                 species = clean_text(ws.cell(row, 1).value)
@@ -421,7 +457,7 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
             swab = row[15]
             swab_object = normalize_swab_object(row[16], row[17])
             if swab is not None and swab_object:
-                swab_key = cp_key(swab)
+                swab_key = normalize_swab_key(swab)
                 count = ref.count_by_swab.get(swab_key)
                 cfu = count / 0.0003 if count is not None else None
                 report_area = report_area_for_cp(current_cp, ref, fallback_zone)

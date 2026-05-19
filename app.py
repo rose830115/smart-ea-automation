@@ -14,6 +14,7 @@ import streamlit as st
 from openpyxl import load_workbook
 
 from smart_ea_automation import run_automation
+from validation import validate_inputs
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -277,9 +278,27 @@ if source_ready and vendor_path and outdir:
     st.subheader("準備執行")
     st.write(f"案件名稱：`{case_name}`")
     st.write(f"輸出位置：`{outdir}`")
-    st.caption("這一步只整理資料與產生檔案；後台輸入會在處理完成後，於下方的後台區塊另外執行。")
+    st.caption("這一步只整理資料與產生檔案;後台輸入會在處理完成後,於下方的後台區塊另外執行。")
 
-    run_button = st.button("開始處理案件", type="primary", use_container_width=True)
+    violations = validate_inputs(vendor_path, target_path)
+    if violations:
+        st.error(
+            "上傳的檔案未通過事前檢查,請修正下列項目後重新上傳:\n\n"
+            + "\n".join(f"- {v}" for v in violations)
+        )
+        st.caption(
+            "規範參考：`200_Reference/templates/smart-ea_業務交檔規格.md` 與 "
+            "`smart-ea_公式範本填表規格.md`"
+        )
+    else:
+        st.success("事前檢查通過,可以開始跑流水線。")
+
+    run_button = st.button(
+        "開始處理案件",
+        type="primary",
+        use_container_width=True,
+        disabled=bool(violations),
+    )
     if run_button:
         try:
             with st.spinner("處理中，正在整理 Excel、產生評論與輸出檔案..."):
