@@ -408,7 +408,16 @@ if result:
         if risk_json_path and risk_json_path.exists():
             try:
                 risk_data = json.loads(risk_json_path.read_text(encoding="utf-8"))
-                st.success(f"已從後台自動抓取風險數據：`{risk_json_path.name}`")
+                if "error" in risk_data and "env_risk" not in risk_data:
+                    st.warning(
+                        "✅ 資料已儲存到後台，但下游「風險圖表資料」抓取失敗（後台 500）。\n\n"
+                        "常見原因：該案件在後台前端的圖表狀態異常（例如先前送過殘缺資料把前端弄壞）。"
+                        "請手動到後台確認該案件，並在下方手動填入風險值。"
+                    )
+                    st.code(risk_data["error"], language="text")
+                    risk_data = {}
+                else:
+                    st.success(f"已從後台自動抓取風險數據：`{risk_json_path.name}`")
             except Exception:
                 st.warning("風險數據 JSON 讀取失敗，請手動填入下方數值。")
         else:

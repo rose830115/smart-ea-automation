@@ -424,15 +424,30 @@ def run_api_fill(args: argparse.Namespace) -> dict[str, Any]:
         verify_payload = client.get_test_result(args.order_id, service_id)
         verify_path = outdir / f"yims_{args.order_id}_api_verify.json"
         verify_path.write_text(json.dumps(verify_payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        risk_data = client.get_print_risk_data(args.order_id, service_id)
+        # 風險資料抓取是儲存後的下游動作; 後台前端若被弄壞會回 500,
+        # 但儲存本身已完成, 不該讓整個流程 crash
         risk_path = outdir / f"yims_{args.order_id}_risk_data.json"
-        risk_path.write_text(json.dumps(risk_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        risk_error: str | None = None
+        try:
+            risk_data = client.get_print_risk_data(args.order_id, service_id)
+            risk_path.write_text(json.dumps(risk_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except requests.HTTPError as exc:
+            risk_error = f"{exc}"
+            risk_path.write_text(
+                json.dumps(
+                    {"error": risk_error, "order_id": args.order_id, "service_id": service_id},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
         result.update(
             {
                 "saved": True,
                 "response": str(response_path),
                 "verify": str(verify_path),
                 "risk_data": str(risk_path),
+                "risk_data_error": risk_error,
                 "verified_main_area_count": len(verify_payload.get("extends_data", {}).get("main_area_array", [])),
             }
         )
