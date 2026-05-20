@@ -887,6 +887,9 @@ def sort_area_key(value: Any) -> tuple[int, Any]:
     number = safe_float(text)
     if number is not None:
         return (0, number)
+    match = re.fullmatch(r"Area\s+(\d+)", text, flags=re.IGNORECASE)
+    if match:
+        return (0, int(match.group(1)))
     return (1, text)
 
 
@@ -899,6 +902,26 @@ def compact_values(row: dict[str, Any], fields: list[str]) -> list[float | int]:
             if compacted is not None:
                 values.append(compacted)
     return values
+
+
+def normalize_row_location(row: dict[str, Any], ref: ReferenceData, fallback_zone: str = "") -> None:
+    """Normalize area/zone fields for rows copied from target workbook tables.
+
+    Vendor-derived rows already go through area_by_cp. Rows copied directly
+    from target tables, especially CFU, may still contain pure-number report
+    areas such as "1". If left as-is, the backend payload creates both
+    "1" and "Area 1", which puts CFU into a duplicate area.
+    """
+    cp = cp_key(row.get("Checking Point"))
+    report_area = normalize_area_name(row.get("Report Area"))
+    if not report_area and cp:
+        report_area = report_area_for_cp(cp, ref, fallback_zone)
+    row["Report Area"] = report_area
+
+    main_zone = clean_text(row.get("Main Zone"))
+    if not main_zone and report_area:
+        main_zone = main_zone_for(cp, report_area, ref, fallback_zone)
+    row["Main Zone"] = main_zone
 
 
 def append_area_payload(area_map: dict[str, dict[str, Any]], area: str, zone: str, ref: ReferenceData) -> dict[str, Any]:
@@ -922,7 +945,7 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
 
     for row in data["Env. Data"]:
         zone = clean_text(row.get("Main Zone"))
-        area = clean_text(row.get("Report Area"))
+        area = normalize_area_name(row.get("Report Area"))
         cp = row.get("Checking Point")
         if not area:
             continue
@@ -937,7 +960,7 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
 
     for row in data["Moisture"]:
         zone = clean_text(row.get("Main Zone"))
-        area = clean_text(row.get("Report Area"))
+        area = normalize_area_name(row.get("Report Area"))
         if not area:
             continue
         target_map = outside_area_map if zone == "OUTSIDE" else indoor_area_map
@@ -956,7 +979,7 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
 
     for row in data["CFU"]:
         zone = clean_text(row.get("Main Zone"))
-        area = clean_text(row.get("Report Area"))
+        area = normalize_area_name(row.get("Report Area"))
         if not area:
             continue
         target_map = outside_area_map if zone == "OUTSIDE" else indoor_area_map
@@ -1056,12 +1079,15 @@ def run_automation(vendor_path: Path | str, target_path: Path | str | None, outd
     # Count 留空時從「菌落計數表」算好的 count_by_swab 回填，避免 CFU sheet G 欄被清空
     manual_cfu = ref.target_tables.get("CFU", [])
     for r in manual_cfu:
-        if r.get("Count") is None:
-            swab_key = normalize_swab_key(r.get("Swab"))
+        normalize_row_location(r, ref)
+        swab_key = normalize_swab_key(r.get("Swab"))
+        count = safe_float(r.get("Count"))
+        if count is None:
             count = ref.count_by_swab.get(swab_key)
             if count is not None:
                 r["Count"] = maybe_int(count)
-                r["CFU/m²"] = maybe_int(count / 0.0003)
+        if count is not None and safe_float(r.get("CFU/m²")) is None:
+            r["CFU/m²"] = maybe_int(count / 0.0003)
     if manual_cfu and any(r.get("Checking Point") is not None for r in manual_cfu):
         data["CFU"] = [r for r in manual_cfu if r.get("Checking Point") is not None]
     # Fill missing Classification for CFU rows using object name heuristics
@@ -1070,7 +1096,7 @@ def run_automation(vendor_path: Path | str, target_path: Path | str | None, outd
             obj = clean_text(row.get("Object", ""))
             if obj:
                 row["Classification"] = classify_object(obj, "cfu", ref)
-        row["Isolate Mold Species"] = ref.mold_species_by_swab.get(cp_key(row.get("Swab")), [])
+        row["Isolate Mold Species"] = ref.mold_species_by_swab.get(normalize_swab_key(row.get("Swab")), [])
 
     workbook_path = outdir / f"{case_name}_standardized_from_vendor.xlsx"
     formula_workbook_path = outdir / f"{case_name}_template_filled_with_formulas.xlsx"
