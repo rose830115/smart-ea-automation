@@ -664,8 +664,10 @@ def write_template_filled_workbook(data: dict[str, list[dict[str, Any]]], ref: R
                 2: "Swab",
                 5: "Classification",
                 6: "Object",
+                7: "Count",
+                8: "CFU/m²",
             },
-            formula_columns=[3, 4, 7, 8],
+            formula_columns=[3, 4],
         )
 
     if "Areas" in wb.sheetnames:
@@ -1029,10 +1031,17 @@ def run_automation(vendor_path: Path | str, target_path: Path | str | None, outd
     ref = read_reference(target_path)
     data = read_vendor(vendor_path, ref)
 
-    # If the target workbook has a manually completed CFU sheet (with Count values),
-    # use it as the authoritative source instead of the vendor-derived rows.
+    # 公式範本 CFU sheet 是採樣計畫主檔（Checking Point/Swab/Object 由業務/實驗端填）
+    # Count 留空時從「菌落計數表」算好的 count_by_swab 回填，避免 CFU sheet G 欄被清空
     manual_cfu = ref.target_tables.get("CFU", [])
-    if manual_cfu and any(r.get("Count") is not None for r in manual_cfu):
+    for r in manual_cfu:
+        if r.get("Count") is None:
+            swab_key = normalize_swab_key(r.get("Swab"))
+            count = ref.count_by_swab.get(swab_key)
+            if count is not None:
+                r["Count"] = maybe_int(count)
+                r["CFU/m²"] = maybe_int(count / 0.0003)
+    if manual_cfu and any(r.get("Checking Point") is not None for r in manual_cfu):
         data["CFU"] = [r for r in manual_cfu if r.get("Checking Point") is not None]
     # Fill missing Classification for CFU rows using object name heuristics
     for row in data["CFU"]:
