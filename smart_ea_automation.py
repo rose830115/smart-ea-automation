@@ -155,6 +155,17 @@ def display_cp(value: Any) -> Any:
     return key
 
 
+# 儀器讀數下限: 低於下限視為儀器讀不到, 統一補成下限值
+MOISTURE_FLOOR = 6
+WIND_FLOW_FLOOR = 0.1
+
+
+def clamp_floor(value: float | int | None, floor: float) -> float | int | None:
+    if value is None:
+        return None
+    return floor if value < floor else value
+
+
 def normalize_area_name(value: Any) -> str:
     text = clean_text(value)
     if not text:
@@ -427,7 +438,7 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                         "Temp. (°C)": maybe_int(safe_float(row[2])),
                         "Humidity (%)": maybe_int(safe_float(row[3])),
                         "CO2 (ppm)": maybe_int(safe_float(row[4])),
-                        "Wind Flow (m/s)": maybe_int(safe_float(row[5])),
+                        "Wind Flow (m/s)": maybe_int(clamp_floor(safe_float(row[5]), WIND_FLOW_FLOOR)),
                         "PM10 (μg/m³)": maybe_int(safe_float(row[6])),
                     }
                 )
@@ -435,7 +446,7 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                 continue
 
             moisture_object = normalize_moisture_object(row[7], row[8])
-            moisture_values = [maybe_int(safe_float(v)) for v in row[9:14]]
+            moisture_values = [maybe_int(clamp_floor(safe_float(v), MOISTURE_FLOOR)) for v in row[9:14]]
             if moisture_object and any(v is not None for v in moisture_values):
                 report_area = report_area_for_cp(current_cp, ref, fallback_zone)
                 main_zone = main_zone_for(current_cp, report_area, ref, fallback_zone)
@@ -490,7 +501,7 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                     "Temp. (°C)": maybe_int(safe_float(row[1])),
                     "Humidity (%)": maybe_int(safe_float(row[2])),
                     "CO2 (ppm)": maybe_int(safe_float(row[3])),
-                    "Wind Flow (m/s)": maybe_int(safe_float(row[4])),
+                    "Wind Flow (m/s)": maybe_int(clamp_floor(safe_float(row[4]), WIND_FLOW_FLOOR)),
                     "PM10 (μg/m³)": maybe_int(safe_float(row[5])),
                 }
             )
