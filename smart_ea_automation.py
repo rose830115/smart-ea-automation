@@ -428,6 +428,13 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
             cp_value = row[0]
             if cp_value is not None:
                 current_cp = cp_key(cp_value)
+            if not current_cp:
+                continue
+
+            # 業務檔常見「CP 只寫一次, 同 CP 下多列環境量測」, 每列只要有
+            # 任一環境數值就 append, 後台會自動取平均
+            env_values = [safe_float(row[i]) for i in (2, 3, 4, 5, 6)]
+            if any(v is not None for v in env_values):
                 report_area = report_area_for_cp(current_cp, ref, fallback_zone)
                 main_zone = main_zone_for(current_cp, report_area, ref, fallback_zone)
                 env_rows.append(
@@ -435,15 +442,13 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                         "Checking Point": display_cp(current_cp),
                         "Report Area": report_area,
                         "Main Zone": main_zone,
-                        "Temp. (°C)": maybe_int(safe_float(row[2])),
-                        "Humidity (%)": maybe_int(safe_float(row[3])),
-                        "CO2 (ppm)": maybe_int(safe_float(row[4])),
-                        "Wind Flow (m/s)": maybe_int(clamp_floor(safe_float(row[5]), WIND_FLOW_FLOOR)),
-                        "PM10 (μg/m³)": maybe_int(safe_float(row[6])),
+                        "Temp. (°C)": maybe_int(env_values[0]),
+                        "Humidity (%)": maybe_int(env_values[1]),
+                        "CO2 (ppm)": maybe_int(env_values[2]),
+                        "Wind Flow (m/s)": maybe_int(clamp_floor(env_values[3], WIND_FLOW_FLOOR)),
+                        "PM10 (μg/m³)": maybe_int(env_values[4]),
                     }
                 )
-            if not current_cp:
-                continue
 
             moisture_object = normalize_moisture_object(row[7], row[8])
             moisture_values = [maybe_int(clamp_floor(safe_float(v), MOISTURE_FLOOR)) for v in row[9:14]]
@@ -489,20 +494,25 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
 
     if "Outside" in wb.sheetnames:
         ws = wb["Outside"]
+        current_cp_outside: Any = None
         for row in ws.iter_rows(min_row=3, values_only=True):
-            if row[0] is None:
+            if row[0] is not None:
+                current_cp_outside = parse_outside_cp(row[0])
+            if current_cp_outside is None:
                 continue
-            cp = parse_outside_cp(row[0])
+            env_values = [safe_float(row[i]) for i in (1, 2, 3, 4, 5)]
+            if not any(v is not None for v in env_values):
+                continue
             env_rows.append(
                 {
-                    "Checking Point": cp,
+                    "Checking Point": current_cp_outside,
                     "Report Area": "Outside",
                     "Main Zone": "OUTSIDE",
-                    "Temp. (°C)": maybe_int(safe_float(row[1])),
-                    "Humidity (%)": maybe_int(safe_float(row[2])),
-                    "CO2 (ppm)": maybe_int(safe_float(row[3])),
-                    "Wind Flow (m/s)": maybe_int(clamp_floor(safe_float(row[4]), WIND_FLOW_FLOOR)),
-                    "PM10 (μg/m³)": maybe_int(safe_float(row[5])),
+                    "Temp. (°C)": maybe_int(env_values[0]),
+                    "Humidity (%)": maybe_int(env_values[1]),
+                    "CO2 (ppm)": maybe_int(env_values[2]),
+                    "Wind Flow (m/s)": maybe_int(clamp_floor(env_values[3], WIND_FLOW_FLOOR)),
+                    "PM10 (μg/m³)": maybe_int(env_values[4]),
                 }
             )
 
