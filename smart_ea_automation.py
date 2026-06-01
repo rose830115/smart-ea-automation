@@ -141,11 +141,16 @@ def object_key(value: Any) -> str:
 def cp_key(value: Any) -> str:
     if value is None:
         return ""
+    if isinstance(value, bool):
+        return ""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     if isinstance(value, int):
         return str(value)
-    return clean_text(value)
+    text = clean_text(value)
+    if re.fullmatch(r"\d+\.0+", text):
+        return str(int(float(text)))
+    return text.upper()
 
 
 def display_cp(value: Any) -> Any:
@@ -389,8 +394,9 @@ def classify_object(obj: str, kind: str, ref: ReferenceData) -> str:
 
 
 def report_area_for_cp(cp: str, ref: ReferenceData, fallback_zone: str) -> str:
-    if cp in ref.area_by_cp:
-        return ref.area_by_cp[cp]
+    key = cp_key(cp)
+    if key in ref.area_by_cp:
+        return ref.area_by_cp[key]
     if fallback_zone == "OUTSIDE":
         return "Outside"
     return ""
