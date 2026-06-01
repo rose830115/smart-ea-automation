@@ -93,6 +93,16 @@ def chart_rows_to_zone_risk(rows: list[Any]) -> dict[str, float | None]:
     return risks
 
 
+def has_analysis_parameter_selection(test_result: dict[str, Any]) -> bool:
+    extends_data = test_result.get("extends_data")
+    if not isinstance(extends_data, dict):
+        return False
+    selection = extends_data.get("analyze_parameter_selection")
+    if not isinstance(selection, list):
+        return False
+    return any(str(item).strip() != "" for item in selection if item is not None)
+
+
 def recompute_top_level_calculated_fields(extends_data: dict[str, Any]) -> None:
     particulate_matter_average = rounded_mean(extends_data.get("particulate_matter_10s", []), 1)
     object_failure_rates = [
@@ -307,6 +317,12 @@ class YimsApiClient:
     def build_save_payload(self, order_id: str, extends_data: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         service_id = self.get_service_id(order_id)
         test_result = self.get_test_result(order_id, service_id)
+        if not has_analysis_parameter_selection(test_result):
+            raise RuntimeError(
+                "後台基本資料的「分析參數選擇」目前是空的，後台無法計算發霉風險。"
+                "請先到後台基本資料勾選分析參數並儲存，再回工具執行檢查或儲存；"
+                "工具不會自動修改這個人工設定。"
+            )
         save_payload = copy.deepcopy(test_result)
         save_payload.setdefault("extends_data", {})
         for key, value in extends_data.items():

@@ -208,6 +208,14 @@ def run_yims_bot(
     }
 
 
+def risk_numbers_available(risk_data: dict[str, Any]) -> bool:
+    for key in ("env_risk", "micro_risk", "overall_risk"):
+        values = risk_data.get(key)
+        if isinstance(values, dict) and any(value is not None for value in values.values()):
+            return True
+    return False
+
+
 st.set_page_config(page_title="MRC Smart EA Tool", layout="wide")
 
 if not check_password():
@@ -411,11 +419,16 @@ if result:
                 if "error" in risk_data and "env_risk" not in risk_data:
                     st.warning(
                         "✅ 資料已儲存到後台，但下游「風險圖表資料」抓取失敗（後台 500）。\n\n"
-                        "常見原因：該案件在後台前端的圖表狀態異常（例如先前送過殘缺資料把前端弄壞）。"
+                        "常見原因：該案件尚未在後台基本資料設定「分析參數選擇」，或後台前端的圖表狀態異常。"
                         "請手動到後台確認該案件，並在下方手動填入風險值。"
                     )
                     st.code(risk_data["error"], language="text")
                     risk_data = {}
+                elif not risk_numbers_available(risk_data):
+                    st.warning(
+                        "後台沒有回傳發霉風險數字。請確認後台基本資料已設定「分析參數選擇」，"
+                        "並且可視性風險資料已由人工確認儲存；確認後再重新執行後台儲存。"
+                    )
                 else:
                     st.success(f"已從後台自動抓取風險數據：`{risk_json_path.name}`")
             except Exception:
