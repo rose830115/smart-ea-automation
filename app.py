@@ -216,6 +216,11 @@ def risk_numbers_available(risk_data: dict[str, Any]) -> bool:
     return False
 
 
+def risk_section_available(risk_data: dict[str, Any], key: str) -> bool:
+    values = risk_data.get(key)
+    return isinstance(values, dict) and any(value is not None for value in values.values())
+
+
 st.set_page_config(page_title="MRC Smart EA Tool", layout="wide")
 
 if not check_password():
@@ -428,6 +433,11 @@ if result:
                     st.warning(
                         "後台沒有回傳發霉風險數字。請確認後台基本資料已設定「分析參數選擇」，"
                         "並且可視性風險資料已由人工確認儲存；確認後再重新執行後台儲存。"
+                    )
+                elif not risk_section_available(risk_data, "env_risk") or not risk_section_available(risk_data, "micro_risk"):
+                    st.warning(
+                        "後台風險數字不完整：環境面或微生物面尚未回傳。"
+                        "請到後台確認風險圖表已正常顯示後，再重新執行後台儲存。"
                     )
                 else:
                     st.success(f"已從後台自動抓取風險數據：`{risk_json_path.name}`")

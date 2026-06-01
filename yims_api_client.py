@@ -6,6 +6,7 @@ import json
 import os
 import statistics
 import sys
+import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -52,9 +53,22 @@ def normalize_number(value: float) -> int | float:
 
 
 ZONE_NAME_TO_CODE = {
+    "rmw": "RMW",
     "raw material warehouse": "RMW",
+    "raw materials warehouse": "RMW",
+    "raw material": "RMW",
+    "raw materials": "RMW",
+    "原材料倉": "RMW",
+    "原料倉": "RMW",
+    "原物料倉": "RMW",
+    "pl": "PL",
     "production line": "PL",
+    "production": "PL",
+    "生產線": "PL",
+    "fgw": "FGW",
     "finished goods warehouse": "FGW",
+    "finished goods": "FGW",
+    "成品倉": "FGW",
 }
 
 
@@ -74,23 +88,48 @@ def _extract_chart_rows(chart_obj: Any) -> list:
     # Try chart_item.en (some chart types use this wrapper)
     chart_item = chart_obj.get("chart_item")
     if isinstance(chart_item, dict):
-        rows = chart_item.get("en") or chart_item.get("zh") or []
+        rows = chart_item.get("en") or chart_item.get("zh-tw") or chart_item.get("zh") or []
         if isinstance(rows, list) and rows:
             return rows
     # Fall back to direct en / zh key
-    rows = chart_obj.get("en") or chart_obj.get("zh") or []
+    rows = chart_obj.get("en") or chart_obj.get("zh-tw") or chart_obj.get("zh") or []
     return rows if isinstance(rows, list) else []
+
+
+def zone_code_from_label(value: Any) -> str | None:
+    label = str(value or "").strip()
+    if not label:
+        return None
+    normalized = " ".join(label.replace("／", "/").split()).casefold()
+    if normalized in ZONE_NAME_TO_CODE:
+        return ZONE_NAME_TO_CODE[normalized]
+    compact = normalized.replace(" ", "")
+    return ZONE_NAME_TO_CODE.get(compact)
 
 
 def chart_rows_to_zone_risk(rows: list[Any]) -> dict[str, float | None]:
     risks: dict[str, float | None] = {"RMW": None, "PL": None, "FGW": None}
-    for row in rows[1:]:
-        if not isinstance(row, list) or len(row) < 2:
+    for row in rows:
+        if isinstance(row, dict):
+            label = row.get("label") or row.get("name") or row.get("area") or row.get("zone")
+            value = row.get("value") or row.get("risk") or row.get("percentage")
+        elif isinstance(row, list) and len(row) >= 2:
+            label, value = row[0], row[1]
+        else:
             continue
-        zone_code = ZONE_NAME_TO_CODE.get(str(row[0]).strip().lower())
+        zone_code = zone_code_from_label(label)
         if zone_code:
-            risks[zone_code] = parse_float(row[1])
+            risks[zone_code] = parse_float(value)
     return risks
+
+
+def risk_section_has_values(risk_data: dict[str, Any], key: str) -> bool:
+    values = risk_data.get(key)
+    return isinstance(values, dict) and any(value is not None for value in values.values())
+
+
+def risk_data_ready(risk_data: dict[str, Any]) -> bool:
+    return risk_section_has_values(risk_data, "env_risk") and risk_section_has_values(risk_data, "micro_risk")
 
 
 def has_analysis_parameter_selection(test_result: dict[str, Any]) -> bool:
@@ -401,6 +440,29 @@ class YimsApiClient:
         ]
         return risk_data
 
+    def get_print_risk_data_with_retry(
+        self,
+        order_id: str,
+        service_id: int,
+        attempts: int = 5,
+        delay_seconds: float = 2.0,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        last_data: dict[str, Any] | None = None
+        last_error: str | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                risk_data = self.get_print_risk_data(order_id, service_id)
+                risk_data["fetch_attempts"] = attempt
+                if risk_data_ready(risk_data):
+                    return risk_data, None
+                last_data = risk_data
+                last_error = "後台尚未回傳環境面或微生物面風險數字。"
+            except requests.HTTPError as exc:
+                last_error = f"{exc}"
+            if attempt < attempts:
+                time.sleep(delay_seconds)
+        return last_data, last_error
+
 
 def run_api_fill(args: argparse.Namespace) -> dict[str, Any]:
     backend_payload = load_json(args.payload)
@@ -444,11 +506,13 @@ def run_api_fill(args: argparse.Namespace) -> dict[str, Any]:
         # 但儲存本身已完成, 不該讓整個流程 crash
         risk_path = outdir / f"yims_{args.order_id}_risk_data.json"
         risk_error: str | None = None
-        try:
-            risk_data = client.get_print_risk_data(args.order_id, service_id)
+        risk_data, risk_error = client.get_print_risk_data_with_retry(args.order_id, service_id)
+        if risk_data is not None:
+            if risk_error:
+                risk_data["risk_data_incomplete"] = True
+                risk_data["risk_data_error"] = risk_error
             risk_path.write_text(json.dumps(risk_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        except requests.HTTPError as exc:
-            risk_error = f"{exc}"
+        else:
             risk_path.write_text(
                 json.dumps(
                     {"error": risk_error, "order_id": args.order_id, "service_id": service_id},
