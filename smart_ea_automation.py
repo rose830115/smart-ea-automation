@@ -363,11 +363,22 @@ def normalize_swab_object(item: Any, specific: Any) -> str:
     return clean_text(item)
 
 
+# Rose 親自認定、但 ITEMLIST 未收錄的物件分類（object_key 小寫比對）。
+# 優先於下方 heuristic 猜測, 但不覆蓋案件 Excel 的 ITEMLIST(尊重 ITEMLIST 為權威)。
+# 之後 Rose 再指正「某物件應該是 X 類」時, 加一行到這裡即可。
+OBJECT_CLASS_OVERRIDES = {
+    "worker tool bag": "f.設備",
+}
+
+
 def classify_object(obj: str, kind: str, ref: ReferenceData) -> str:
     key = object_key(obj)
     mapping = ref.moisture_class_by_object if kind == "moisture" else ref.cfu_class_by_object
     if key in mapping:
         return mapping[key]
+
+    if key in OBJECT_CLASS_OVERRIDES:
+        return OBJECT_CLASS_OVERRIDES[key]
 
     if any(x in key for x in ["carton", "inner box", "outer box", "box"]):
         return "e.外包裝"
@@ -416,6 +427,60 @@ def parse_outside_cp(value: Any) -> str:
     return text
 
 
+def _norm_header(value: Any) -> str:
+    """表頭正規化: 換行/多重空白壓成單一空白 + 大小寫不敏感。"""
+    return re.sub(r"\s+", " ", clean_text(value)).casefold()
+
+
+def resolve_column_layout(header_row: tuple) -> dict[str, Any]:
+    """把 zone sheet 的第 2 列表頭對應到欄位 index。
+
+    業務檔的欄位排列會因範本版本不同而位移, 最常見的是棉棒區塊: 有的版本
+    在「Swab No.」和「Swab Item」之間多一欄「棉棒編號」(PYS), 有的沒有
+    (CKL / JV / DIAT)。寫死 index 會在缺欄的版本整排左移, 棉棒編號抓到物件
+    名、物件抓到用途、Count 因 key 對不上而抓不到。改用表頭名稱定位。
+    """
+    norm = [_norm_header(v) for v in header_row]
+
+    def find(*keywords, start: int = 0):
+        for i in range(start, len(norm)):
+            h = norm[i]
+            if h and any(k in h for k in keywords):
+                return i
+        return None
+
+    m_item = find("moisture checking item")
+    s_item = find("swab item")
+    # 棉棒編號優先(PYS 的真正棉棒序號欄), 缺才退回 Swab No.
+    swab_no = find("棉棒編號")
+    if swab_no is None:
+        swab_no = find("swab no")
+
+    return {
+        "cp": 0,
+        "temp": find("temp"),
+        "humidity": find("humidity"),
+        "co2": find("co2"),
+        "wind": find("wind"),
+        "pm10": find("pm10"),
+        "moisture_item": m_item,
+        # 緊接在 moisture item 之後的「specific function/material」才是含水量用途欄
+        "moisture_specific": find("specific function", start=(m_item + 1) if m_item is not None else 0),
+        "moisture_values": [i for i, h in enumerate(norm) if "moisture content" in h][:5],
+        "swab_no": swab_no,
+        "swab_item": s_item,
+        # 緊接在 swab item 之後的「specific function/material」才是棉棒用途欄
+        "swab_specific": find("specific function", start=(s_item + 1) if s_item is not None else 0),
+    }
+
+
+def _cell(row: tuple, idx: int | None) -> Any:
+    """依 index 安全取值; idx 為 None 或超出該列長度時回 None。"""
+    if idx is None or idx >= len(row):
+        return None
+    return row[idx]
+
+
 def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[str, Any]]]:
     wb = load_workbook(vendor_path, data_only=True, read_only=True)
     env_rows: list[dict[str, Any]] = []
@@ -424,11 +489,13 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
 
     for sheet_name, fallback_zone in resolve_zone_sheets(wb.sheetnames):
         ws = wb[sheet_name]
+        header_row = next(ws.iter_rows(min_row=2, max_row=2, values_only=True), ())
+        layout = resolve_column_layout(header_row)
         current_cp = ""
         for row in ws.iter_rows(min_row=3, values_only=True):
-            if not any(v is not None for v in row[:18]):
+            if not any(v is not None for v in row):
                 continue
-            cp_value = row[0]
+            cp_value = _cell(row, layout["cp"])
             if cp_value is not None:
                 current_cp = cp_key(cp_value)
             if not current_cp:
@@ -436,7 +503,7 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
 
             # 業務檔常見「CP 只寫一次, 同 CP 下多列環境量測」, 每列只要有
             # 任一環境數值就 append, 後台會自動取平均
-            env_values = [safe_float(row[i]) for i in (2, 3, 4, 5, 6)]
+            env_values = [safe_float(_cell(row, layout[k])) for k in ("temp", "humidity", "co2", "wind", "pm10")]
             if any(v is not None for v in env_values):
                 report_area = report_area_for_cp(current_cp, ref, fallback_zone)
                 main_zone = main_zone_for(current_cp, report_area, ref, fallback_zone)
@@ -453,8 +520,10 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                     }
                 )
 
-            moisture_object = normalize_moisture_object(row[7], row[8])
-            moisture_values = [maybe_int(clamp_floor(safe_float(v), MOISTURE_FLOOR)) for v in row[9:14]]
+            moisture_object = normalize_moisture_object(_cell(row, layout["moisture_item"]), _cell(row, layout["moisture_specific"]))
+            moisture_values = [maybe_int(clamp_floor(safe_float(_cell(row, i)), MOISTURE_FLOOR)) for i in layout["moisture_values"]]
+            # 補足到 5 格, 避免範本少於 5 欄時 index 爆掉
+            moisture_values += [None] * (5 - len(moisture_values))
             if moisture_object and any(v is not None for v in moisture_values):
                 report_area = report_area_for_cp(current_cp, ref, fallback_zone)
                 main_zone = main_zone_for(current_cp, report_area, ref, fallback_zone)
@@ -473,8 +542,8 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                     }
                 )
 
-            swab = row[15]
-            swab_object = normalize_swab_object(row[16], row[17])
+            swab = _cell(row, layout["swab_no"])
+            swab_object = normalize_swab_object(_cell(row, layout["swab_item"]), _cell(row, layout["swab_specific"]))
             if swab is not None and swab_object:
                 swab_key = normalize_swab_key(swab)
                 count = ref.count_by_swab.get(swab_key)
