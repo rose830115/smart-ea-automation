@@ -13,8 +13,11 @@ from typing import Iterable
 
 from openpyxl import load_workbook
 
-from sheet_names import missing_zones, resolve_zone_sheets
-
+ZONE_SHEETS: tuple[str, ...] = (
+    "Raw Material warehouse",
+    "Production Line",
+    "Finished Goods Warehouse",
+)
 ALLOWED_ZONES: tuple[str, ...] = ("RMW", "PL", "FGW")
 
 # cp 編號允許格式：純數字、數字+小寫字母、或 O 開頭+數字
@@ -36,15 +39,15 @@ def validate_vendor_file(vendor_path: Path) -> list[str]:
     violations: list[str] = []
     wb = load_workbook(vendor_path, data_only=True, read_only=True)
 
-    # A1: 每個 zone 至少要有一個分頁（前綴比對，容忍大小寫 / 空白 / 廠區後綴）
-    for canonical in missing_zones(wb.sheetnames):
-        violations.append(
-            f"業務檔找不到「{canonical}」的分頁。"
-            f"分頁名開頭需為「{canonical}」，後面可加廠區 / 製程（如 -CKL1、-CKL2 (Cutting）"
-        )
+    # A1: sheet names must match exactly
+    missing = [s for s in ZONE_SHEETS if s not in wb.sheetnames]
+    for sheet in missing:
+        violations.append(f"業務檔缺少 sheet：「{sheet}」（必須含大小寫與空白完全相符）")
 
-    # A2: Col A cp format（對所有實際對應到 zone 的分頁檢查，含同 zone 多頁）
-    for sheet, _zone in resolve_zone_sheets(wb.sheetnames):
+    # A2: Col A cp format
+    for sheet in ZONE_SHEETS:
+        if sheet not in wb.sheetnames:
+            continue
         ws = wb[sheet]
         for idx, row in enumerate(ws.iter_rows(min_row=3, values_only=True), start=3):
             if not row:
