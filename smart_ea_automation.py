@@ -25,18 +25,13 @@ from openpyxl.formula.translate import Translator
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from yims_payload_builder import write_yims_fill_plan
+from sheet_names import outside_sheets, resolve_zone_sheets
 
 
 BASE_NAS = Path("/Volumes/實驗室共用區MRC/#YCT資料區#/4.Smart EA")
 DEFAULT_VENDOR = BASE_NAS / "案件資料區/2025/PD#EA-2511R06 1112 ID NB PYS/PYS 112025 Record_of_environment_data_and_swab_sampling_for_audit_team_ver_5.xlsx"
 DEFAULT_TARGET = BASE_NAS / "案件資料區/2025/PD#EA-2511R06 1112 ID NB PYS/PYS CFU and Environmental Raw Data (v2.0).xlsx"
 DEFAULT_OUTDIR = Path(__file__).resolve().parent / "outputs"
-
-ZONE_SHEETS = {
-    "Raw Material warehouse": "RMW",
-    "Production Line": "PL",
-    "Finished Goods Warehouse": "FGW",
-}
 
 ZONE_LABELS = {
     "RMW": "Raw Material Warehouse",
@@ -425,7 +420,7 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
     moisture_rows: list[dict[str, Any]] = []
     cfu_rows: list[dict[str, Any]] = []
 
-    for sheet_name, fallback_zone in ZONE_SHEETS.items():
+    for sheet_name, fallback_zone in resolve_zone_sheets(wb.sheetnames):
         ws = wb[sheet_name]
         current_cp = ""
         for row in ws.iter_rows(min_row=3, values_only=True):
@@ -498,8 +493,8 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
                     }
                 )
 
-    if "Outside" in wb.sheetnames:
-        ws = wb["Outside"]
+    for outside_name in outside_sheets(wb.sheetnames):
+        ws = wb[outside_name]
         current_cp_outside: Any = None
         for row in ws.iter_rows(min_row=3, values_only=True):
             if row[0] is not None:
