@@ -167,11 +167,21 @@ def clamp_floor(value: float | int | None, floor: float) -> float | int | None:
 
 
 def normalize_area_name(value: Any) -> str:
+    # 數字型 area(int 或 4.0 這種整數浮點) 一律轉成 "Area N"。
+    # Areas 分頁的 Report Area 有的案件存成 int(1)、有的存成 float(1.0);
+    # 舊版只認 int 與純數字字串, 遇到 float 4.0 會原樣輸出成後台區域名"4.0"
+    # (CKK 案件後台評估區域跑出 1.0/2.0/3.0 就是這個原因)。
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, (int, float)) and float(value).is_integer():
+        return f"Area {int(value)}"
     text = clean_text(value)
     if not text:
         return ""
     if re.fullmatch(r"\d+", text):
         return f"Area {int(text)}"
+    if re.fullmatch(r"\d+\.0+", text):
+        return f"Area {int(float(text))}"
     return text
 
 
@@ -325,19 +335,26 @@ def read_reference(target_path: Path | None) -> ReferenceData:
 
     if "菌落計數表" in wb.sheetnames:
         ws = wb["菌落計數表"]
-        max_col = ws.max_column or 1
-        max_row = ws.max_row or 1
-        for col in range(2, max_col + 1):
-            swab = ws.cell(2, col).value
+        # 用 iter_rows 而非 cell(r,c)+max_column: read_only 模式下 Google Sheets
+        # 匯出的 xlsx 常缺 dimension tag, 使 max_column/max_row 回 None, 舊寫法
+        # 會讓整段菌種讀取被跳過(菌種進不了後台)。iter_rows 直接串流實際資料,
+        # 不依賴 dimension, 與 MISC 分頁的讀法一致。
+        # row 2 = 棉棒編號(表頭); row 3 起 = 各菌種在每支棉棒的菌落數。
+        count_rows = list(ws.iter_rows(min_row=2, values_only=True))
+        header = count_rows[0] if count_rows else ()
+        for col_idx in range(1, len(header)):
+            swab = header[col_idx]
             if swab is None:
                 continue
             swab_key = normalize_swab_key(swab)
             total = 0.0
-            for row in range(3, max_row + 1):
-                species = clean_text(ws.cell(row, 1).value)
+            for data_row in count_rows[1:]:
+                if col_idx >= len(data_row):
+                    continue
+                species = clean_text(data_row[0])
                 if not species or "total cfu" in species.casefold() or "風險菌" in species:
                     continue
-                value = safe_float(ws.cell(row, col).value)
+                value = safe_float(data_row[col_idx])
                 if value is not None:
                     total += value
                     if value > 0 and species not in mold_species_by_swab[swab_key]:
