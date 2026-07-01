@@ -325,13 +325,15 @@ def read_reference(target_path: Path | None) -> ReferenceData:
 
     if "菌落計數表" in wb.sheetnames:
         ws = wb["菌落計數表"]
-        for col in range(2, ws.max_column + 1):
+        max_col = ws.max_column or 1
+        max_row = ws.max_row or 1
+        for col in range(2, max_col + 1):
             swab = ws.cell(2, col).value
             if swab is None:
                 continue
             swab_key = normalize_swab_key(swab)
             total = 0.0
-            for row in range(3, ws.max_row + 1):
+            for row in range(3, max_row + 1):
                 species = clean_text(ws.cell(row, 1).value)
                 if not species or "total cfu" in species.casefold() or "風險菌" in species:
                     continue
