@@ -499,8 +499,6 @@ def read_vendor(vendor_path: Path, ref: ReferenceData) -> dict[str, list[dict[st
         for row in ws.iter_rows(min_row=3, values_only=True):
             if row[0] is not None:
                 current_cp_outside = parse_outside_cp(row[0])
-            if current_cp_outside is None:
-                continue
             env_values = [safe_float(row[i]) for i in (1, 2, 3, 4, 5)]
             if not any(v is not None for v in env_values):
                 continue
