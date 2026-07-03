@@ -18,7 +18,11 @@ try:
 except ImportError:
     _HAS_CLOUDSCRAPER = False
 
-from yims_payload_builder import build_yims_extends_data, load_comments
+from yims_payload_builder import (
+    build_yims_extends_data,
+    load_comments,
+    preserve_human_managed_main_area_fields,
+)
 
 
 BASE_URL = "https://mrc.ycmproducts.com"
@@ -362,10 +366,17 @@ class YimsApiClient:
                 "請先到後台基本資料勾選分析參數並儲存，再回工具執行檢查或儲存；"
                 "工具不會自動修改這個人工設定。"
             )
+        existing_main_areas = (test_result.get("extends_data") or {}).get("main_area_array") or []
         save_payload = copy.deepcopy(test_result)
         save_payload.setdefault("extends_data", {})
         for key, value in extends_data.items():
             save_payload["extends_data"][key] = value
+        # 存檔前把後台既有的人工欄位 (可視性風險、照片、平面圖等) 搬回新 payload,
+        # 避免工具的空白預設覆蓋掉同事已在後台選好項目 / 上傳的照片。
+        preserve_human_managed_main_area_fields(
+            save_payload["extends_data"].get("main_area_array") or [],
+            existing_main_areas,
+        )
         normalize_extends_data_for_save(save_payload["extends_data"])
         save_payload["service_id"] = service_id
         save_payload["filesFormdata"] = {}

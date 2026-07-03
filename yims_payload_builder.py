@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from statistics import mean
@@ -11,6 +12,7 @@ OBJECT_MOISTURE_CATEGORY_IDS = {
     "半成品": 2,
     "成品": 3,
     "包裝材": 4,
+    "包裝材料": 4,  # ITEMLIST 用「包裝材料」(4字), 對應後台同一個包裝材選項(id 4)
     "外包裝": 5,
     "設備": 6,
     "建築本體": 7,
@@ -23,6 +25,7 @@ MICROBIOLOGY_CATEGORY_IDS = {
     "半成品": 2,
     "成品": 3,
     "包裝材": 4,
+    "包裝材料": 4,  # ITEMLIST 用「包裝材料」(4字), 對應後台同一個包裝材選項(id 4)
     "外包裝": 5,
     "設備": 6,
     "建築本體": 7,
@@ -272,6 +275,61 @@ def default_main_area() -> dict[str, Any]:
         "environmental_conclusion": lang(),
         "microbiological_conclusion": lang(),
     }
+
+
+# 後台 main_area 裡「由人工維護、工具完全不產生」的欄位。
+# 這些欄位需要人工在後台選項目 / 上傳照片 (可視性風險、工廠照片、發霉風險平面圖、
+# 不符合項、一般風險、評估區域劃分)。工具存檔時若用空白預設整批覆蓋, 會清掉同事已填的內容,
+# 所以存檔前要從後台既有資料把它們原封搬回來。
+HUMAN_MANAGED_MAIN_AREA_FIELDS = (
+    "main_area_photo",
+    "evaluation_area_division",
+    "mold_risk_floor_plan",
+    "non_compliance_array",
+    "ordinary_risk",
+    "visibility_risk_array",
+)
+
+
+def _main_area_match_key(main_area: dict[str, Any]) -> str:
+    name = main_area.get("main_area_name")
+    if isinstance(name, dict):
+        return (
+            str(name.get("en") or "").strip().casefold()
+            or str(name.get("zh-tw") or "").strip().casefold()
+        )
+    return str(name or "").strip().casefold()
+
+
+def preserve_human_managed_main_area_fields(
+    new_main_areas: list[dict[str, Any]],
+    existing_main_areas: list[dict[str, Any]] | None,
+) -> None:
+    """把後台既有的人工欄位 (可視性風險、照片、平面圖等) 保留到新 payload。
+
+    工具只負責環境 / Moisture / 微生物數據; 上面 HUMAN_MANAGED_MAIN_AREA_FIELDS
+    列的欄位是人工在後台手動維護的, 工具重建 main_area_array 時一律是空白預設,
+    直接存檔會覆蓋掉人工輸入。這裡依 main_area 名稱 (退而求其次用位置) 對回後台既有資料,
+    只要後台原本有該欄位就整個搬過來, 避免清掉同事的可視性風險與照片。
+    """
+    existing_main_areas = existing_main_areas or []
+    existing_by_key: dict[str, dict[str, Any]] = {}
+    for area in existing_main_areas:
+        if isinstance(area, dict):
+            existing_by_key.setdefault(_main_area_match_key(area), area)
+
+    for idx, new_area in enumerate(new_main_areas or []):
+        if not isinstance(new_area, dict):
+            continue
+        existing = existing_by_key.get(_main_area_match_key(new_area))
+        if existing is None and idx < len(existing_main_areas):
+            candidate = existing_main_areas[idx]
+            existing = candidate if isinstance(candidate, dict) else None
+        if existing is None:
+            continue
+        for field in HUMAN_MANAGED_MAIN_AREA_FIELDS:
+            if field in existing:
+                new_area[field] = copy.deepcopy(existing[field])
 
 
 def category_id(label: str, mapping: dict[str, int]) -> int:
