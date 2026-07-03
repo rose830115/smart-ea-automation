@@ -13,7 +13,7 @@ from typing import Any
 import streamlit as st
 from openpyxl import load_workbook
 
-from smart_ea_automation import run_automation
+from smart_ea_automation import run_automation, run_from_standardized
 from validation import validate_inputs
 
 
@@ -269,25 +269,45 @@ with st.sidebar:
 source_ready = False
 vendor_path: Path | None = None
 target_path: Path | None = None
+adjusted_path: Path | None = None
 outdir: Path | None = None
 
-col1, col2 = st.columns(2)
-with col1:
-    vendor_upload = st.file_uploader("上傳業務回傳環境資料 Excel", type=["xlsx"])
-with col2:
-    target_upload = st.file_uploader("上傳人工標準化 / 公式範本 Excel", type=["xlsx"])
+MODE_FRESH = "① 從業務 Excel 整理"
+MODE_ADJUSTED = "② 用調整後的標準化 Excel 直接建後台資料"
+input_mode = st.radio(
+    "資料來源",
+    [MODE_FRESH, MODE_ADJUSTED],
+    horizontal=True,
+    help="② 用在：資料統整後你們又手動改了分類，把調整好的標準化 Excel 丟回來，"
+    "工具直接用它重建後台資料包，不用一格一格手動輸入後台。",
+)
 
 upload_dir = UPLOAD_ROOT / f"{case_name}_{int(time.time())}"
 outdir = DEFAULT_OUTPUT_ROOT / case_name
-if vendor_upload is not None:
-    vendor_path = save_uploaded_file(vendor_upload, upload_dir)
-if target_upload is not None:
-    target_path = save_uploaded_file(target_upload, upload_dir)
-source_ready = vendor_path is not None
+
+if input_mode == MODE_FRESH:
+    col1, col2 = st.columns(2)
+    with col1:
+        vendor_upload = st.file_uploader("上傳業務回傳環境資料 Excel", type=["xlsx"])
+    with col2:
+        target_upload = st.file_uploader("上傳人工標準化 / 公式範本 Excel", type=["xlsx"])
+    if vendor_upload is not None:
+        vendor_path = save_uploaded_file(vendor_upload, upload_dir)
+    if target_upload is not None:
+        target_path = save_uploaded_file(target_upload, upload_dir)
+    source_ready = vendor_path is not None
+else:
+    adjusted_upload = st.file_uploader(
+        "上傳調整後的標準化 Excel（工具先前產出的 SEA_xxx_standardized_from_vendor.xlsx）",
+        type=["xlsx"],
+    )
+    if adjusted_upload is not None:
+        adjusted_path = save_uploaded_file(adjusted_upload, upload_dir)
+    source_ready = adjusted_path is not None
 
 st.divider()
 
-if source_ready and vendor_path and outdir:
+if input_mode == MODE_FRESH and source_ready and vendor_path and outdir:
     st.subheader("準備執行")
     st.write(f"案件名稱：`{case_name}`")
     st.write(f"輸出位置：`{outdir}`")
@@ -322,8 +342,49 @@ if source_ready and vendor_path and outdir:
         except Exception as exc:
             st.error("處理失敗，請確認 Excel 格式與資料夾路徑。")
             st.exception(exc)
+
+elif input_mode == MODE_ADJUSTED and source_ready and adjusted_path:
+    # 從檔名自動偵測案件名稱（SEA_xxx_standardized_from_vendor.xlsx → SEA_xxx），
+    # 讓輸出資料夾與菌種來源對得上，不用逼使用者去側欄改案件名稱。
+    STD_SUFFIX = "_standardized_from_vendor.xlsx"
+    if adjusted_path.name.endswith(STD_SUFFIX):
+        case_name_eff = sanitize_case_name(adjusted_path.name[: -len(STD_SUFFIX)])
+    else:
+        case_name_eff = case_name
+    outdir_eff = DEFAULT_OUTPUT_ROOT / case_name_eff
+
+    st.subheader("準備執行（調整後 Excel → 後台資料）")
+    st.write(f"偵測案件名稱：`{case_name_eff}`")
+    st.write(f"輸出位置：`{outdir_eff}`")
+    st.caption("菌種直接讀這份標準化 Excel 的「Isolate Mold Species」欄，不依賴其他檔案；隔天或換電腦重傳也讀得到。")
+
+    run_button_adj = st.button(
+        "用這份 Excel 建立後台資料", type="primary", use_container_width=True
+    )
+    if run_button_adj:
+        try:
+            with st.spinner("讀取調整後 Excel、依你改過的分類重建後台資料包..."):
+                result = run_from_standardized(adjusted_path, outdir_eff, case_name_eff)
+            st.session_state["last_result"] = result
+            st.session_state["last_cfu_data"] = result.get("cfu_data", [])
+            species_source = result.get("species_source")
+            species_matched = result.get("species_matched", 0)
+            if species_source == "excel_column":
+                species_note = f"菌種讀自 Excel 菌種欄，共 {species_matched} 筆。"
+            elif species_source == "payload_fallback":
+                species_note = f"這份 Excel 沒有菌種欄（舊版），退回從第一次結果帶回 {species_matched} 筆。"
+            else:
+                species_note = "注意：這份 Excel 沒有菌種資料，微生物菌種會留空。"
+            st.success(f"完成。{species_note}可到下方「後台輸入」檢查 / 儲存。")
+        except Exception as exc:
+            st.error("處理失敗，請確認這是工具先前產出的標準化 Excel（分頁與欄位需維持原樣）。")
+            st.exception(exc)
+
 else:
-    st.info("請先提供業務回傳環境資料 Excel。")
+    if input_mode == MODE_ADJUSTED:
+        st.info("請上傳調整後的標準化 Excel（工具先前產出的 SEA_xxx_standardized_from_vendor.xlsx）。")
+    else:
+        st.info("請先提供業務回傳環境資料 Excel。")
 
 result = st.session_state.get("last_result")
 if result:
@@ -347,7 +408,6 @@ if result:
     download_cols = st.columns(2)
     with download_cols[0]:
         show_download(paths["standardized_workbook"], "下載整理後 Excel")
-        show_download(paths["formula_workbook"], "下載公式保留版 Excel")
     with download_cols[1]:
         show_download(paths["validation_report"], "下載比對報告")
 

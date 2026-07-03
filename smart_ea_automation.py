@@ -109,7 +109,12 @@ CFU_HEADERS = [
     "Object",
     "Count",
     "CFU/m²",
+    "Isolate Mold Species",
 ]
+
+# 菌種在標準化 Excel 存成單一儲存格字串（逗號分隔），讓這份 Excel 自給自足、
+# 可完整反向讀回，不必依賴第一次跑出的 backend payload 是否還在。
+SPECIES_CELL_DELIMITER = ", "
 
 
 @dataclass
@@ -623,6 +628,27 @@ def style_sheet(ws) -> None:
         ws.column_dimensions[get_column_letter(col)].width = min(max(max_len + 2, 12), 28)
 
 
+def format_species_cell(value: Any) -> str:
+    """把菌種 list 序列化成標準化 Excel 用的單一儲存格字串。"""
+    if isinstance(value, list):
+        return SPECIES_CELL_DELIMITER.join(str(item).strip() for item in value if str(item).strip())
+    return clean_text(value)
+
+
+def parse_species_cell(value: Any) -> list[str]:
+    """把標準化 Excel 的菌種儲存格字串解析回 list。"""
+    text = clean_text(value)
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _sheet_cell_value(header: str, value: Any) -> Any:
+    if header == "Isolate Mold Species":
+        return format_species_cell(value)
+    return value
+
+
 def write_workbook(data: dict[str, list[dict[str, Any]]], ref: ReferenceData, output_path: Path) -> None:
     wb = Workbook()
     wb.remove(wb.active)
@@ -635,7 +661,7 @@ def write_workbook(data: dict[str, list[dict[str, Any]]], ref: ReferenceData, ou
         ws = wb.create_sheet(sheet_name)
         ws.append(headers)
         for row in data[sheet_name]:
-            ws.append([row.get(h) for h in headers])
+            ws.append([_sheet_cell_value(h, row.get(h)) for h in headers])
         style_sheet(ws)
 
     ws = wb.create_sheet("Areas")
@@ -1186,22 +1212,20 @@ def run_automation(vendor_path: Path | str, target_path: Path | str | None, outd
         row["Isolate Mold Species"] = ref.mold_species_by_swab.get(normalize_swab_key(row.get("Swab")), [])
 
     workbook_path = outdir / f"{case_name}_standardized_from_vendor.xlsx"
-    formula_workbook_path = outdir / f"{case_name}_template_filled_with_formulas.xlsx"
     validation_path = outdir / f"{case_name}_conversion_validation.md"
     backend_payload_path = outdir / f"{case_name}_backend_input_payload.json"
     yims_fill_plan_path = outdir / f"{case_name}_yims_fill_plan.json"
     yims_fill_plan_md_path = outdir / f"{case_name}_yims_fill_plan.md"
 
     write_workbook(data, ref, workbook_path)
-    if target_path and target_path.exists():
-        write_template_filled_workbook(data, ref, target_path, formula_workbook_path)
+    # 公式範本版 Excel 已停用（Rose 要求不對外提供，避免同事誤用），不再產生。
     validation = write_validation_report(data, ref, validation_path)
     backend_payload = write_backend_payload(data, ref, case_name, backend_payload_path)
     write_yims_fill_plan(backend_payload, yims_fill_plan_path, yims_fill_plan_md_path)
 
     paths = {
         "standardized_workbook": workbook_path,
-        "formula_workbook": formula_workbook_path if target_path and target_path.exists() else None,
+        "formula_workbook": None,
         "validation_report": validation_path,
         "backend_payload": backend_payload_path,
         "yims_fill_plan_json": yims_fill_plan_path,
@@ -1218,13 +1242,162 @@ def run_automation(vendor_path: Path | str, target_path: Path | str | None, outd
     }
 
 
+# ---------------------------------------------------------------------------
+# 反向路徑：把「人工調整後的標準化 Excel」直接讀回，重建後台資料包。
+# 用途：資料統整後，人工又改了某些分類，不想一格一格手動輸入後台，
+# 直接把調整好的標準化 Excel 丟回工具，用它重算 backend payload 再上傳。
+# 標準化 Excel 的欄位與內部 data 是 1:1，所以能可靠反向讀回；唯一不在 Excel 裡的
+# 是菌種(Isolate Mold Species)，來自菌落計數表——這裡依棉棒編號從同案件第一次跑出的
+# backend payload 帶回，人工不用重填菌種。
+# ---------------------------------------------------------------------------
+
+STANDARDIZED_DATA_SHEETS = ["Env. Data", "Moisture", "CFU"]
+
+
+def _rows_from_worksheet(ws) -> list[dict[str, Any]]:
+    """把一個分頁讀成 list[dict]，key = 表頭名稱（跳過空白表頭欄）。"""
+    rows_iter = ws.iter_rows(values_only=True)
+    try:
+        header = next(rows_iter)
+    except StopIteration:
+        return []
+    headers = [clean_text(h) for h in header]
+    result: list[dict[str, Any]] = []
+    for raw in rows_iter:
+        if raw is None or all(value is None or value == "" for value in raw):
+            continue
+        row: dict[str, Any] = {}
+        for name, value in zip(headers, raw):
+            if name:
+                row[name] = value
+        result.append(row)
+    return result
+
+
+def _area_info_from_areas_sheet(wb) -> dict[str, dict[str, str]]:
+    """從標準化 Excel 的 Areas 分頁右側表(Report Area / Function / Zone)建 area_info。"""
+    area_info: dict[str, dict[str, str]] = {}
+    if "Areas" not in wb.sheetnames:
+        return area_info
+    for raw in wb["Areas"].iter_rows(min_row=2, values_only=True):
+        # 表頭：Checking Point | Report Area | (空) | Report Area | Function | Zone
+        area = raw[3] if len(raw) > 3 else None
+        function = raw[4] if len(raw) > 4 else None
+        zone = raw[5] if len(raw) > 5 else None
+        area_name = normalize_area_name(area)
+        if area_name:
+            area_info[area_name] = {
+                "function": clean_text(function),
+                "zone": clean_text(zone),
+            }
+    return area_info
+
+
+def read_standardized_workbook(path: Path) -> tuple[dict[str, list[dict[str, Any]]], ReferenceData]:
+    """讀回標準化 Excel → (data, ref)。ref 只需 area_info(區域機能/主區)，其餘留空。"""
+    wb = load_workbook(path, read_only=True, data_only=True)
+    data: dict[str, list[dict[str, Any]]] = {}
+    for name in STANDARDIZED_DATA_SHEETS:
+        data[name] = _rows_from_worksheet(wb[name]) if name in wb.sheetnames else []
+    # 菌種欄若存在，把儲存格字串解析回 list（供 build_backend_payload 使用）
+    for row in data.get("CFU", []):
+        if "Isolate Mold Species" in row:
+            row["Isolate Mold Species"] = parse_species_cell(row["Isolate Mold Species"])
+    ref = ReferenceData(
+        area_by_cp={},
+        area_info=_area_info_from_areas_sheet(wb),
+        moisture_class_by_object={},
+        cfu_class_by_object={},
+        count_by_swab={},
+        mold_species_by_swab={},
+        target_tables={},
+    )
+    wb.close()
+    return data, ref
+
+
+def attach_species_from_payload(data: dict[str, list[dict[str, Any]]], payload_path: Path | None) -> int:
+    """依棉棒編號，從既有 backend payload 把菌種補回 CFU 列。回傳成功帶到菌種的列數。"""
+    swab_species: dict[str, list[str]] = {}
+    if payload_path and Path(payload_path).exists():
+        payload = json.loads(Path(payload_path).read_text(encoding="utf-8"))
+        for section in ("indoor", "outside"):
+            for group in payload.get(section, []):
+                for area in group.get("areas", []):
+                    for item in area.get("microbiology", []):
+                        key = normalize_swab_key(item.get("swab"))
+                        species = item.get("isolate_mold_species_names") or []
+                        if key and species:
+                            swab_species[key] = species
+    matched = 0
+    for row in data.get("CFU", []):
+        species = swab_species.get(normalize_swab_key(row.get("Swab")), [])
+        row["Isolate Mold Species"] = species
+        if species:
+            matched += 1
+    return matched
+
+
+def run_from_standardized(
+    standardized_path: Path | str,
+    outdir: Path | str,
+    case_name: str,
+    species_payload_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """用調整後的標準化 Excel 重建後台資料包（不重跑 vendor 分析）。"""
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    standardized_path = Path(standardized_path)
+
+    data, ref = read_standardized_workbook(standardized_path)
+
+    # 菌種：優先用標準化 Excel 內建的菌種欄（這份 Excel 自給自足，隔天/換機都讀得到）；
+    # 只有舊版沒有菌種欄的 Excel，才退回從第一次 payload 依棉棒帶回。
+    species_from_excel = sum(1 for row in data.get("CFU", []) if row.get("Isolate Mold Species"))
+    if species_from_excel > 0:
+        species_matched = species_from_excel
+        species_source = "excel_column"
+    else:
+        if species_payload_path is None:
+            default_payload = outdir / f"{case_name}_backend_input_payload.json"
+            species_payload_path = default_payload if default_payload.exists() else None
+        species_matched = attach_species_from_payload(data, species_payload_path)
+        species_source = "payload_fallback" if species_matched else "none"
+
+    backend_payload_path = outdir / f"{case_name}_backend_input_payload.json"
+    yims_fill_plan_path = outdir / f"{case_name}_yims_fill_plan.json"
+    yims_fill_plan_md_path = outdir / f"{case_name}_yims_fill_plan.md"
+
+    backend_payload = write_backend_payload(data, ref, case_name, backend_payload_path)
+    write_yims_fill_plan(backend_payload, yims_fill_plan_path, yims_fill_plan_md_path)
+
+    paths = {
+        "standardized_workbook": standardized_path,
+        "formula_workbook": None,
+        "validation_report": None,
+        "backend_payload": backend_payload_path,
+        "yims_fill_plan_json": yims_fill_plan_path,
+        "yims_fill_plan_md": yims_fill_plan_md_path,
+    }
+    return {
+        "case_name": case_name,
+        "outdir": outdir,
+        "paths": paths,
+        "validation": None,
+        "cfu_data": data.get("CFU", []),
+        "backend_summary": backend_payload.get("summary", {}),
+        "quality_issues": backend_payload.get("quality_issues", []),
+        "species_matched": species_matched,
+        "species_source": species_source,
+        "source_mode": "adjusted_standardized",
+    }
+
+
 def run(args: argparse.Namespace) -> None:
     result = run_automation(args.vendor, args.target, args.outdir, args.case_name)
     paths = result["paths"]
 
     print(f"Generated workbook: {paths['standardized_workbook']}")
-    if paths["formula_workbook"]:
-        print(f"Formula-preserved workbook: {paths['formula_workbook']}")
     print(f"Validation report: {paths['validation_report']}")
     print(f"Backend input payload: {paths['backend_payload']}")
     print(f"YIMS fill plan JSON: {paths['yims_fill_plan_json']}")
