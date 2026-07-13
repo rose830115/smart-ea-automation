@@ -10,6 +10,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import streamlit as st
 from openpyxl import load_workbook
 
@@ -28,6 +29,20 @@ VENDOR_SHEETS = {"Raw Material warehouse", "Production Line", "Finished Goods Wa
 TARGET_HINT_SHEETS = {"Areas", "Env. Data", "Moisture", "CFU"}
 
 warnings.filterwarnings("ignore", message="Data Validation extension is not supported")
+
+
+def arrow_safe(data: Any) -> pd.DataFrame:
+    """把要用 st.dataframe 顯示的資料統一轉成純文字 DataFrame。
+
+    像 checking_point 這種欄位常有 '16B' 與數字混在一起，Streamlit 顯示時
+    要序列化成 Arrow，pyarrow 會先猜成 int64 再遇到 '16B' 直接失敗；在較新的
+    Python（雲端 3.14）上這個失敗會惡化成整個行程 segmentation fault。
+    先全部轉成字串，Arrow 就只會看到單一字串型別，永遠不會踩到這個雷。
+    """
+    df = data if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
+    # astype(str) 統一型別（pandas 3.0 會保留空值為 NaN，較舊版本會變字串 "nan"）；
+    # replace + fillna 兩種情況都清成空字串，顯示才乾淨。
+    return df.astype(str).replace({"nan": "", "None": "", "NaT": "", "<NA>": ""}).fillna("")
 
 
 def sanitize_case_name(value: str) -> str:
@@ -403,7 +418,7 @@ if result:
 
     if quality_issues:
         st.warning("有資料問題需要人工確認。")
-        st.dataframe(quality_issues, use_container_width=True)
+        st.dataframe(arrow_safe(quality_issues), use_container_width=True)
 
     download_cols = st.columns(2)
     with download_cols[0]:
@@ -517,7 +532,7 @@ if result:
         if raw_tables:
             with st.expander("後台抓取到的原始表格", expanded=False):
                 for tbl in raw_tables[:3]:
-                    st.dataframe(tbl)
+                    st.dataframe(arrow_safe(tbl))
 
         # Risk number confirmation / manual input
         st.markdown("**確認或修正後台風險數值**（若自動抓取正確可直接跳過）")
