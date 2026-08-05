@@ -164,6 +164,41 @@ def check_password() -> bool:
     return False
 
 
+def render_main_area_matching(yims_result: dict[str, Any]) -> None:
+    """顯示工具倉間與後台倉間的配對結果。
+
+    倉間可以拆成 PL1 / PL2，同仁又會在後台把名稱改成客戶要的寫法，工具送的名稱
+    就對不上後台。對不上時系統改用順序配對——照片與可視性風險不會消失，而是留在
+    順序相同的另一個倉間，比清空更難發現，所以一定要攤開給人確認。
+    """
+    try:
+        payload = json.loads(yims_result.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        return
+    rows = payload.get("main_area_matching") or []
+    warnings = payload.get("main_area_warnings") or []
+    if not rows:
+        return
+    if warnings:
+        for message in warnings:
+            (st.warning if message.startswith("⚠️") else st.info)(message)
+    with st.expander(f"倉間對應（{len(rows)} 個）", expanded=bool(warnings)):
+        st.dataframe(
+            arrow_safe(pd.DataFrame([
+                {
+                    "順序": row["position"],
+                    "工具的倉間": row["tool_name"],
+                    "後台的倉間": row["backend_name"] or "（新增）",
+                    "怎麼對上的": {"name": "名稱相同", "position": "靠順序", "new": "後台沒有，新增"}
+                    .get(row["matched_by"], row["matched_by"]),
+                }
+                for row in rows
+            ])),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 def run_yims_bot(
     order_id: str,
     paths: dict[str, Path],
@@ -476,6 +511,7 @@ if result:
                 st.write("這次已透過後台 API 儲存。")
             else:
                 st.write("這次只有檢查後台與資料包，沒有儲存到後台。")
+            render_main_area_matching(yims_result)
         else:
             st.error("後台動作失敗。")
             st.code(yims_result["stderr"] or yims_result["stdout"], language="text")

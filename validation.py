@@ -14,8 +14,7 @@ from typing import Iterable
 from openpyxl import load_workbook
 
 from sheet_names import missing_zones, resolve_zone_sheets
-
-ALLOWED_ZONES: tuple[str, ...] = ("RMW", "PL", "FGW")
+from zones import describe_allowed, is_valid_zone, normalize_zone, parse_zone
 
 # cp 編號允許格式：純數字、數字+小寫字母、或 O 開頭+數字
 CP_PATTERN = re.compile(r"^(?:O\d+|\d+[a-z]?)$", re.IGNORECASE)
@@ -74,6 +73,8 @@ def validate_target_file(target_path: Path) -> list[str]:
         return violations
 
     ws = wb["Areas"]
+    # 代碼 → 出現過的列，供拆分一致性檢查（同一基底不可同時有 PL 與 PL1）
+    zone_rows: dict[str, list[int]] = {}
     for idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not row:
             continue
@@ -93,16 +94,48 @@ def validate_target_file(target_path: Path) -> list[str]:
                     f"（只允許純數字或 `Area N` 連號，不可含文字或特殊字元）"
                 )
 
-        # B2: Col F zone 格式
+        # B2: Col F zone 格式（允許拆倉間的編號後綴，如 PL1 / PL2）
         zone_str = _row_text(zone)
-        if zone_str and zone_str not in ALLOWED_ZONES:
+        if zone_str and not is_valid_zone(zone_str):
             violations.append(
-                f"公式範本 Areas 第 {idx} 列 zone 違規：「{zone_str}」"
-                f"（只接受 RMW / PL / FGW）"
+                f"公式範本 Areas 第 {idx} 列 zone 違規：「{zone_str}」（{describe_allowed()}）"
             )
+        elif zone_str:
+            zone_rows.setdefault(normalize_zone(zone_str), []).append(idx)
         if area_str and not zone_str:
             violations.append(
                 f"公式範本 Areas 第 {idx} 列 area「{area_str}」缺 zone 欄位"
+            )
+
+    violations.extend(_split_consistency_violations(zone_rows))
+    return violations
+
+
+def _split_consistency_violations(zone_rows: dict[str, list[int]]) -> list[str]:
+    """同一個基底倉間不可同時出現「沒編號」與「有編號」。
+
+    把既有案件的 PL 拆成 PL1 / PL2 時，最容易漏改幾列。漏改的結果是靜默多出
+    一個只有幾個 area 的 PL 倉間，後台與報告都會照著跑，不會有任何錯誤訊息。
+    """
+    by_base: dict[str, dict[int, list[int]]] = {}
+    for code, rows in zone_rows.items():
+        parsed = parse_zone(code)
+        if parsed is None:  # OUTSIDE
+            continue
+        base, index = parsed
+        by_base.setdefault(base, {}).setdefault(index, []).extend(rows)
+
+    violations: list[str] = []
+    for base, by_index in by_base.items():
+        if 0 in by_index and len(by_index) > 1:
+            plain = ", ".join(str(r) for r in sorted(by_index[0])[:10])
+            numbered = ", ".join(
+                f"{base}{i}" for i in sorted(k for k in by_index if k)
+            )
+            violations.append(
+                f"公式範本 Areas 的「{base}」拆分不完整：已經有 {numbered}，"
+                f"但第 {plain} 列還是填「{base}」。拆倉間時同一個倉間的每一列都要給編號，"
+                f"否則沒編號的會變成另一個獨立倉間。"
             )
     return violations
 

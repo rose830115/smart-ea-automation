@@ -25,3 +25,6 @@ web_outputs/
 *.docx
 *.pdf
 
+
+# 示範案件（虛構資料，用 make_demo_case.py 重新產生即可）
+demo_case/

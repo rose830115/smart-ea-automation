@@ -301,35 +301,105 @@ def _main_area_match_key(main_area: dict[str, Any]) -> str:
     return str(name or "").strip().casefold()
 
 
+def _main_area_display_name(main_area: dict[str, Any]) -> str:
+    name = main_area.get("main_area_name")
+    if isinstance(name, dict):
+        return str(name.get("en") or name.get("zh-tw") or "").strip()
+    return str(name or "").strip()
+
+
 def preserve_human_managed_main_area_fields(
     new_main_areas: list[dict[str, Any]],
     existing_main_areas: list[dict[str, Any]] | None,
-) -> None:
+) -> list[dict[str, Any]]:
     """把後台既有的人工欄位 (可視性風險、照片、平面圖等) 保留到新 payload。
 
     工具只負責環境 / Moisture / 微生物數據; 上面 HUMAN_MANAGED_MAIN_AREA_FIELDS
     列的欄位是人工在後台手動維護的, 工具重建 main_area_array 時一律是空白預設,
     直接存檔會覆蓋掉人工輸入。這裡依 main_area 名稱 (退而求其次用位置) 對回後台既有資料,
     只要後台原本有該欄位就整個搬過來, 避免清掉同事的可視性風險與照片。
+
+    **倉間名稱也視為人工欄位**: 案件把 PL 拆成 PL1 / PL2 時, 工具送的是
+    `Production Line 1`, 同仁可能已在後台依客戶需求改成 `PBB's Production Line`。
+    對到既有倉間就沿用後台的名稱, 工具不覆寫。
+
+    回傳配對明細供呼叫端顯示 —— 用位置對到的那種要讓人看見: 名稱對不上時照片
+    不會消失, 而是搬到順序相同的另一個倉間, 比清空更難發現。
     """
     existing_main_areas = existing_main_areas or []
+    new_main_areas = new_main_areas or []
     existing_by_key: dict[str, dict[str, Any]] = {}
     for area in existing_main_areas:
         if isinstance(area, dict):
             existing_by_key.setdefault(_main_area_match_key(area), area)
 
-    for idx, new_area in enumerate(new_main_areas or []):
+    # 名稱配對先做完，才知道哪些後台倉間已被認領
+    claimed: set[int] = set()
+    matched_by_name: dict[int, dict[str, Any]] = {}
+    for idx, new_area in enumerate(new_main_areas):
         if not isinstance(new_area, dict):
             continue
         existing = existing_by_key.get(_main_area_match_key(new_area))
-        if existing is None and idx < len(existing_main_areas):
+        if existing is not None:
+            matched_by_name[idx] = existing
+            claimed.add(id(existing))
+
+    # 位置配對只在倉間數相同時才有意義。數量不同就代表這次要新增或刪倉間，
+    # 位置早就錯開了——硬對會把某個倉間的照片搬到另一個倉間去（實測：後台三個、
+    # 工具四個時，PL2 會對到後台的 FGW，而 FGW 又被工具的 FGW 用名稱認領，
+    # 同一份照片被兩個倉間共用）。寧可標成新增讓人補，也不要錯位。
+    positional_ok = len(new_main_areas) == len(existing_main_areas)
+
+    report: list[dict[str, Any]] = []
+    for idx, new_area in enumerate(new_main_areas):
+        if not isinstance(new_area, dict):
+            continue
+        tool_name = _main_area_display_name(new_area)
+        existing = matched_by_name.get(idx)
+        matched_by = "name" if existing is not None else None
+        if existing is None and positional_ok and idx < len(existing_main_areas):
             candidate = existing_main_areas[idx]
-            existing = candidate if isinstance(candidate, dict) else None
+            # 已被別人用名稱認領的後台倉間不可再被位置認領
+            if isinstance(candidate, dict) and id(candidate) not in claimed:
+                existing, matched_by = candidate, "position"
+                claimed.add(id(candidate))
+        report.append(
+            {
+                "tool_name": tool_name,
+                "backend_name": _main_area_display_name(existing) if existing else "",
+                "matched_by": matched_by or "new",
+                "position": idx + 1,
+            }
+        )
         if existing is None:
             continue
         for field in HUMAN_MANAGED_MAIN_AREA_FIELDS:
             if field in existing:
                 new_area[field] = copy.deepcopy(existing[field])
+        # 名稱以後台為準: 同仁可能已改成客戶要的倉間名, 工具不該把它改回制式名稱
+        if "main_area_name" in existing:
+            new_area["main_area_name"] = copy.deepcopy(existing["main_area_name"])
+    return report
+
+
+def describe_main_area_matching(report: list[dict[str, Any]]) -> list[str]:
+    """把配對明細轉成給人看的訊息; 沒有風險的配對不出聲。"""
+    messages: list[str] = []
+    for row in report:
+        if row["matched_by"] == "position":
+            messages.append(
+                f"⚠️ 工具的「{row['tool_name']}」在後台沒有同名倉間，依順序認定它就是"
+                f"後台第 {row['position']} 個「{row['backend_name']}」"
+                f"（同仁改過倉間名稱時會這樣）。存檔會沿用後台的名稱，"
+                f"照片與可視性風險也留給它。**確認這兩個是同一個倉間再存檔。**"
+            )
+        elif row["matched_by"] == "new":
+            messages.append(
+                f"ℹ️ 工具的「{row['tool_name']}」在後台沒有對應倉間，會新增一個。"
+                f"新倉間沒有照片與可視性風險，存完記得到後台補；"
+                f"如果它其實是後台某個既有倉間，請先在後台把名稱改成一致再跑一次。"
+            )
+    return messages
 
 
 def category_id(label: str, mapping: dict[str, int]) -> int:

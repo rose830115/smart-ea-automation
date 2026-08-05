@@ -8,7 +8,23 @@ from statistics import mean
 from typing import Any
 
 
-ZONE_ORDER = ["RMW", "PL", "FGW"]
+from zones import parse_zone, sort_zones, zone_label
+
+# 倉間不再固定三個：一個倉間的 area 太多、或工廠有兩條不同產品的產線時，
+# 會拆成 PL1 / PL2。所以順序一律從案件實際資料算，不寫死清單。
+def zone_order(stats: dict) -> list:
+    return sort_zones(stats.keys())
+
+
+def zone_base(zone: str) -> str:
+    """PL1 / PL2 的基底代碼都是 PL，用來套用倉間類型專屬的文案。"""
+    parsed = parse_zone(zone)
+    return parsed[0] if parsed else str(zone)
+
+
+def zone_count_word(stats: dict) -> str:
+    words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+    return words.get(len(stats), str(len(stats)))
 ZONE_LABELS = {
     "RMW": "Raw Material Warehouse",
     "PL": "Production Line",
@@ -304,7 +320,7 @@ def zone_stats(payload: dict[str, Any], risk_data: dict[str, Any]) -> dict[str, 
     stats: dict[str, dict[str, Any]] = {}
     for zone_group in payload.get("indoor", []):
         zone = zone_group.get("main_zone")
-        if zone not in ZONE_ORDER:
+        if not parse_zone(zone):  # 非室內倉間（Outside）或無法解析就跳過
             continue
         areas = sorted(zone_group.get("areas", []), key=lambda item: area_sort_key(item.get("assessment_area", "")))
         rh = [area_average(area, "humidity_percent") for area in areas]
@@ -324,7 +340,7 @@ def zone_stats(payload: dict[str, Any], risk_data: dict[str, Any]) -> dict[str, 
         area_air = {area.get("assessment_area", ""): area_air_count(area) for area in areas}
         stats[zone] = {
             "zone": zone,
-            "label": ZONE_LABELS[zone],
+            "label": zone_label(zone),
             "areas": areas,
             "avg_rh": mean(rh_vals) if rh_vals else None,
             "avg_co2": mean(co2_vals) if co2_vals else None,
@@ -590,14 +606,14 @@ def microbiology_comment(m: dict[str, Any]) -> str:
 
 
 def ranked_zones(stats: dict[str, dict[str, Any]], field: str) -> list[str]:
-    return sorted(ZONE_ORDER, key=lambda zone: stats.get(zone, {}).get(field) or -1, reverse=True)
+    return sorted(zone_order(stats), key=lambda zone: stats.get(zone, {}).get(field) or -1, reverse=True)
 
 
 def common_environmental_sources(stats: dict[str, dict[str, Any]]) -> list[str]:
     candidates = ["relative humidity", "humidity permeability rate", "mold spore blow index", "spore infiltration rate", "object moisture content", "carbon dioxide"]
     result = []
     for candidate in candidates:
-        count = sum(1 for zone in ZONE_ORDER if candidate in issue_names(stats[zone]))
+        count = sum(1 for zone in zone_order(stats) if candidate in issue_names(stats[zone]))
         if count >= 2:
             result.append(candidate)
     return result
@@ -623,7 +639,7 @@ def family_presence_summary(presence: dict[str, set[str]]) -> tuple[list[str], l
 
 def moisture_family_presence(stats: dict[str, dict[str, Any]]) -> dict[str, set[str]]:
     presence: dict[str, set[str]] = {}
-    for zone in ZONE_ORDER:
+    for zone in zone_order(stats):
         for item in stats[zone]["failed_moisture"]:
             family = object_family(item["object"], item["category"])
             presence.setdefault(family, set()).add(zone)
@@ -632,7 +648,7 @@ def moisture_family_presence(stats: dict[str, dict[str, Any]]) -> dict[str, set[
 
 def microbiology_family_presence(stats: dict[str, dict[str, Any]]) -> dict[str, set[str]]:
     presence: dict[str, set[str]] = {}
-    for zone in ZONE_ORDER:
+    for zone in zone_order(stats):
         for row in stats[zone]["microbiology"]:
             if row["level"] not in {"moderate", "high"}:
                 continue
@@ -645,12 +661,12 @@ def overall_environmental_comment(stats: dict[str, dict[str, Any]]) -> str:
     ranking = ranked_zones(stats, "env_risk")
     top = ranking[0]
     sources = common_environmental_sources(stats)
-    hpr_over_100 = [zone for zone in ZONE_ORDER if (stats[zone]["humidity_permeability"] or 0) > 100]
+    hpr_over_100 = [zone for zone in zone_order(stats) if (stats[zone]["humidity_permeability"] or 0) > 100]
     moisture_shared, moisture_any = family_presence_summary(moisture_family_presence(stats))
 
     sentences = [
-        "Across the three main zones, mold risk from the environmental perspective was mainly shaped by the same moisture-retention and spore-retention pattern.",
-        f"The environmental risk ranking was {join_items([ZONE_LABELS[z] + ' ' + fmt_pct(stats[z]['env_risk']) for z in ranking], limit=3)}, with the {ZONE_LABELS[top]} showing the highest environmental mold risk.",
+        f"Across the {zone_count_word(stats)} main zones, mold risk from the environmental perspective was mainly shaped by the same moisture-retention and spore-retention pattern.",
+        f"The environmental risk ranking was {join_items([zone_label(z) + ' ' + fmt_pct(stats[z]['env_risk']) for z in ranking], limit=len(stats))}, with the {zone_label(top)} showing the highest environmental mold risk.",
     ]
     if sources:
         sentences.append(
@@ -658,7 +674,7 @@ def overall_environmental_comment(stats: dict[str, dict[str, Any]]) -> str:
         )
     if hpr_over_100:
         sentences.append(
-            f"Humidity permeability above 100% in {join_items([ZONE_LABELS[z] for z in hpr_over_100], limit=3)} indicated that indoor moisture may have accumulated across the facility and might not have been exhausted effectively."
+            f"Humidity permeability above 100% in {join_items([zone_label(z) for z in hpr_over_100], limit=len(stats))} indicated that indoor moisture may have accumulated across the facility and might not have been exhausted effectively."
         )
     if moisture_shared:
         sentences.append(
@@ -669,15 +685,16 @@ def overall_environmental_comment(stats: dict[str, dict[str, Any]]) -> str:
             f"Moisture failures involved {join_items(moisture_any, limit=5)}, which could have provided water or nutrients for mold growth on contact surfaces."
         )
     sentences.append(
-        "Low mold spore blow index combined with high spore infiltration could have allowed spores to remain indoors and settle on the same moisture-retaining surfaces, linking the Raw Material Warehouse, Production Line, and Finished Goods Warehouse through material handling and storage flow."
+        "Low mold spore blow index combined with high spore infiltration could have allowed spores to remain indoors and settle on the same moisture-retaining surfaces, linking "
+        f"{join_items([zone_label(z) for z in zone_order(stats)], limit=len(stats))} through material handling and storage flow."
     )
-    if top == "FGW":
+    if zone_base(top) == "FGW":
         sentences.append(
             "The Finished Goods Warehouse could have shown the highest environmental risk because moisture accumulation and spore retention may have persisted into the storage stage, where finished goods and packaging were exposed for longer periods."
         )
     else:
         sentences.append(
-            f"The {ZONE_LABELS[top]} could have shown the highest environmental risk because shared moisture and spore-retention factors were most concentrated there."
+            f"The {zone_label(top)} could have shown the highest environmental risk because shared moisture and spore-retention factors were most concentrated there."
         )
     return " ".join(sentences)
 
@@ -688,16 +705,16 @@ def overall_microbiology_comment(stats: dict[str, dict[str, Any]]) -> str:
     surface_shared, surface_any = family_presence_summary(microbiology_family_presence(stats))
     air_within_standard = all(
         not [area for area, value in stats[zone]["area_air"].items() if value is not None and value >= 10000]
-        for zone in ZONE_ORDER
+        for zone in zone_order(stats)
     )
 
     sentences = [
-        "Across the three main zones, microbiological risk was mainly driven by surface contamination rather than airborne contamination.",
-        f"The microbiological risk ranking was {join_items([ZONE_LABELS[z] + ' ' + fmt_pct(stats[z]['micro_risk']) for z in ranking], limit=3)}, with the {ZONE_LABELS[top]} showing the highest microbiological risk.",
+        f"Across the {zone_count_word(stats)} main zones, microbiological risk was mainly driven by surface contamination rather than airborne contamination.",
+        f"The microbiological risk ranking was {join_items([zone_label(z) + ' ' + fmt_pct(stats[z]['micro_risk']) for z in ranking], limit=len(stats))}, with the {zone_label(top)} showing the highest microbiological risk.",
     ]
     if air_within_standard:
         sentences.append(
-            "Air contamination in all three zones remained within the standard, so the shared microbiological concern was the presence of contaminated surfaces that could have acted as local reservoirs."
+            f"Air contamination in all {zone_count_word(stats)} zones remained within the standard, so the shared microbiological concern was the presence of contaminated surfaces that could have acted as local reservoirs."
         )
     if surface_shared:
         sentences.append(
@@ -710,41 +727,47 @@ def overall_microbiology_comment(stats: dict[str, dict[str, Any]]) -> str:
     sentences.append(
         "This pattern could have supported cross-zone transfer: contaminated packaging or ventilation-related surfaces in the Raw Material Warehouse may have carried spores toward production, contaminated equipment and contact surfaces in the Production Line may have spread spores during processing, and contaminated stored objects or ventilation surfaces in the Finished Goods Warehouse may have retained spores during storage."
     )
-    if top == "PL":
+    if zone_base(top) == "PL":
         sentences.append(
             "The Production Line could have shown the highest microbiological risk because it contained more repeated-contact surfaces, so surface contamination there may have affected both incoming materials and downstream goods."
         )
     else:
         sentences.append(
-            f"The {ZONE_LABELS[top]} could have shown the highest microbiological risk because contaminated surface reservoirs were most concentrated there."
+            f"The {zone_label(top)} could have shown the highest microbiological risk because contaminated surface reservoirs were most concentrated there."
         )
     return " ".join(sentences)
 
 
 def comprehensive_comment(stats: dict[str, dict[str, Any]]) -> str:
     ranking = ranked_zones(stats, "overall_risk")
-    values = [stats[z]["overall_risk"] for z in ZONE_ORDER if stats[z]["overall_risk"] is not None]
+    values = [stats[z]["overall_risk"] for z in zone_order(stats) if stats[z]["overall_risk"] is not None]
     risk_range = f"{fmt_pct(min(values))} to {fmt_pct(max(values))}" if values else "N.A."
     top = ranking[0]
 
     sentences = [
-        f"Based on the environmental and microbiological results, the overall mold risk of the evaluated areas ranged from {risk_range}, and the highest overall risk was found in the {ZONE_LABELS[top]} at {fmt_pct(stats[top]['overall_risk'])}.",
-        f"The overall risk ranking was {join_items([ZONE_LABELS[z] + ' ' + fmt_pct(stats[z]['overall_risk']) for z in ranking], limit=3)}.",
+        f"Based on the environmental and microbiological results, the overall mold risk of the evaluated areas ranged from {risk_range}, and the highest overall risk was found in the {zone_label(top)} at {fmt_pct(stats[top]['overall_risk'])}.",
+        f"The overall risk ranking was {join_items([zone_label(z) + ' ' + fmt_pct(stats[z]['overall_risk']) for z in ranking], limit=len(stats))}.",
     ]
 
-    rmw_surface, _ = micro_surface_summary(stats["RMW"]["microbiology"], {"moderate", "high"})
-    pl_surface, _ = micro_surface_summary(stats["PL"]["microbiology"], {"moderate", "high"})
-    fgw_surface, _ = micro_surface_summary(stats["FGW"]["microbiology"], {"moderate", "high"})
+    # 同一種倉間可能有多個（PL1 / PL2），任何一個有中高污染就要寫那段
+    def base_has_surface(base: str) -> bool:
+        for zone in zone_order(stats):
+            if zone_base(zone) != base:
+                continue
+            summary, _ = micro_surface_summary(stats[zone]["microbiology"], {"moderate", "high"})
+            if summary != "no moderate or high surface contamination":
+                return True
+        return False
 
-    if rmw_surface != "no moderate or high surface contamination":
+    if base_has_surface("RMW"):
         sentences.append(
             "Surface contamination in the Raw Material Warehouse, especially on packaging or ventilation and dehumidification equipment, could have become a potential source carried toward the Production Line with materials or packages."
         )
-    if pl_surface != "no moderate or high surface contamination":
+    if base_has_surface("PL"):
         sentences.append(
             "In the Production Line, contaminated equipment, operating equipment, workers' contact surfaces, or finished goods could have transferred spores during processing and may have carried contamination into the storage stage."
         )
-    if fgw_surface != "no moderate or high surface contamination":
+    if base_has_surface("FGW"):
         sentences.append(
             "In the Finished Goods Warehouse, high humidity, moisture accumulation, and contaminated stored objects or ventilation-related equipment could have allowed spores carried from earlier stages to remain on finished goods or surrounding surfaces."
         )
@@ -757,7 +780,7 @@ def comprehensive_comment(stats: dict[str, dict[str, Any]]) -> str:
 def generate_rule_based_comments(payload: dict[str, Any], risk_data: dict[str, Any]) -> dict[str, str]:
     stats = zone_stats(payload, risk_data)
     comments: dict[str, str] = {}
-    for zone in ZONE_ORDER:
+    for zone in zone_order(stats):
         comments[f"{zone}_env"] = environmental_comment(stats[zone])
         comments[f"{zone}_micro"] = microbiology_comment(stats[zone])
     comments["OVERALL_ENV"] = overall_environmental_comment(stats)
@@ -769,17 +792,14 @@ def generate_rule_based_comments(payload: dict[str, Any], risk_data: dict[str, A
 def write_comments_txt(comments: dict[str, str], outdir: Path, case_name: str) -> Path:
     outdir.mkdir(parents=True, exist_ok=True)
     path = outdir / f"{case_name}_rule_based_comments.txt"
-    sections = [
-        ("RMW_env", "Raw Material Warehouse - Environmental Comment"),
-        ("PL_env", "Production Line - Environmental Comment"),
-        ("FGW_env", "Finished Goods Warehouse - Environmental Comment"),
-        ("OVERALL_ENV", "Overall Environmental Comment"),
-        ("RMW_micro", "Raw Material Warehouse - Microbiology Comment"),
-        ("PL_micro", "Production Line - Microbiology Comment"),
-        ("FGW_micro", "Finished Goods Warehouse - Microbiology Comment"),
-        ("OVERALL_MICRO", "Overall Microbiology Comment"),
-        ("OVERALL_COMPREHENSIVE", "Comprehensive Overall Mold Risk Comment"),
-    ]
+    # 段落依實際倉間數：三倉間九段，拆過的案件（例如 PL1 / PL2）十一段。
+    zone_codes = sort_zones({key.rsplit("_", 1)[0] for key in comments
+                             if key.endswith(("_env", "_micro")) and not key.startswith("OVERALL")})
+    sections = [(f"{z}_env", f"{zone_label(z)} - Environmental Comment") for z in zone_codes]
+    sections.append(("OVERALL_ENV", "Overall Environmental Comment"))
+    sections += [(f"{z}_micro", f"{zone_label(z)} - Microbiology Comment") for z in zone_codes]
+    sections.append(("OVERALL_MICRO", "Overall Microbiology Comment"))
+    sections.append(("OVERALL_COMPREHENSIVE", "Comprehensive Overall Mold Risk Comment"))
     lines = [f"{case_name} Smart EA Rule-Based Comment Draft", ""]
     for key, title in sections:
         lines.extend([title, comments.get(key, ""), ""])

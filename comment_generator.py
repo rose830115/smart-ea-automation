@@ -14,6 +14,18 @@ import os
 from pathlib import Path
 from typing import Any
 
+from zones import sort_zones, zone_label
+
+# 倉間可以拆成 PL1 / PL2（area 太多、或兩條不同產品的產線），所以清單一律從
+# 後台風險數字的實際 key 算出來，不寫死三個——寫死會讓拆出來的倉間整段消失。
+def zones_from_risk(risk_data: dict) -> list:
+    codes = set()
+    for key in ("env_risk", "micro_risk", "overall_risk"):
+        section = risk_data.get(key) or {}
+        codes.update(section.keys())
+    return sort_zones(codes) or ["RMW", "PL", "FGW"]
+
+
 ZONE_LABELS = {
     "RMW": "Raw Material Warehouse",
     "PL": "Production Line",
@@ -176,7 +188,7 @@ def _flags_text(m: dict[str, Any]) -> str:
 
 def build_env_zone_prompt(zone: str, metrics: dict[str, Any], env_risk_pct: float | None) -> str:
     m = metrics.get(zone, {})
-    label = ZONE_LABELS[zone]
+    label = zone_label(zone)
     risk_str = f"{env_risk_pct:.1f}%" if env_risk_pct is not None else "N/A (fetch from YIMS)"
     failed_objs = ", ".join(m.get("failed_objects", [])[:6]) or "none detected"
     high_rh_areas = ", ".join(m.get("high_rh_areas", [])) or "none"
@@ -222,10 +234,11 @@ Output rules:
 
 def build_env_overall_prompt(metrics: dict[str, Any], risk_data: dict[str, Any]) -> str:
     env_risks = risk_data.get("env_risk", {})
-    ranked = sorted(["RMW", "PL", "FGW"], key=lambda z: (env_risks.get(z) or 0), reverse=True)
+    zone_codes = zones_from_risk(risk_data)
+    ranked = sorted(zone_codes, key=lambda z: (env_risks.get(z) or 0), reverse=True)
 
     zone_lines = []
-    for zone in ["RMW", "PL", "FGW"]:
+    for zone in zone_codes:
         m = metrics.get(zone, {})
         r = env_risks.get(zone)
         exceeded = []
@@ -236,7 +249,7 @@ def build_env_overall_prompt(metrics: dict[str, Any], risk_data: dict[str, Any])
         if m.get("avg_co2") and m["avg_co2"] > 600: exceeded.append("CO2")
         if m.get("moisture_failed_ratio", 0) > 50: exceeded.append("Moisture")
         zone_lines.append(
-            f"  - {ZONE_LABELS[zone]}: Official Risk={r or 'N/A'}%, Exceeded={', '.join(exceeded) or 'none'}"
+            f"  - {zone_label(zone)}: Official Risk={r or 'N/A'}%, Exceeded={', '.join(exceeded) or 'none'}"
         )
 
     return f"""Write an overall environmental mold risk comment for a Smart EA audit report.
@@ -244,7 +257,7 @@ def build_env_overall_prompt(metrics: dict[str, Any], risk_data: dict[str, Any])
 Zone summary:
 {chr(10).join(zone_lines)}
 
-Risk ranking (highest to lowest): {' > '.join(ZONE_LABELS[z] for z in ranked)}
+Risk ranking (highest to lowest): {' > '.join(zone_label(z) for z in ranked)}
 
 Writing guide:
 {_GUIDE_ENV_OVERALL}
@@ -261,7 +274,7 @@ Output rules:
 
 
 def build_micro_zone_prompt(zone: str, cfu_data: list[dict], micro_risk_pct: float | None) -> str:
-    label = ZONE_LABELS[zone]
+    label = zone_label(zone)
     risk_str = f"{micro_risk_pct:.1f}%" if micro_risk_pct is not None else "N/A (fetch from YIMS)"
 
     zone_rows = [r for r in cfu_data if str(r.get("Main Zone", "")).strip() == zone]
@@ -300,11 +313,12 @@ Output rules:
 
 def build_micro_overall_prompt(cfu_data: list[dict], risk_data: dict[str, Any]) -> str:
     micro_risks = risk_data.get("micro_risk", {})
-    ranked = sorted(["RMW", "PL", "FGW"], key=lambda z: (micro_risks.get(z) or 0), reverse=True)
+    zone_codes = zones_from_risk(risk_data)
+    ranked = sorted(zone_codes, key=lambda z: (micro_risks.get(z) or 0), reverse=True)
 
     zone_lines = [
-        f"  - {ZONE_LABELS[z]}: Official Microbiology Risk={micro_risks.get(z) or 'N/A'}%"
-        for z in ["RMW", "PL", "FGW"]
+        f"  - {zone_label(z)}: Official Microbiology Risk={micro_risks.get(z) or 'N/A'}%"
+        for z in zone_codes
     ]
 
     return f"""Write an overall microbiology mold risk comment for a Smart EA audit report.
@@ -312,7 +326,7 @@ def build_micro_overall_prompt(cfu_data: list[dict], risk_data: dict[str, Any]) 
 Zone microbiology risk (from YIMS):
 {chr(10).join(zone_lines)}
 
-Risk ranking (highest to lowest): {' > '.join(ZONE_LABELS[z] for z in ranked)}
+Risk ranking (highest to lowest): {' > '.join(zone_label(z) for z in ranked)}
 
 Writing guide:
 {_GUIDE_MICRO_OVERALL}
@@ -334,16 +348,17 @@ def build_comprehensive_overall_prompt(
     env_risks = risk_data.get("env_risk", {})
     micro_risks = risk_data.get("micro_risk", {})
     overall_risks = risk_data.get("overall_risk", {})
-    env_ranked = sorted(["RMW", "PL", "FGW"], key=lambda z: (env_risks.get(z) or 0), reverse=True)
-    micro_ranked = sorted(["RMW", "PL", "FGW"], key=lambda z: (micro_risks.get(z) or 0), reverse=True)
-    overall_ranked = sorted(["RMW", "PL", "FGW"], key=lambda z: (overall_risks.get(z) or 0), reverse=True)
+    zone_codes = zones_from_risk(risk_data)
+    env_ranked = sorted(zone_codes, key=lambda z: (env_risks.get(z) or 0), reverse=True)
+    micro_ranked = sorted(zone_codes, key=lambda z: (micro_risks.get(z) or 0), reverse=True)
+    overall_ranked = sorted(zone_codes, key=lambda z: (overall_risks.get(z) or 0), reverse=True)
 
     zone_lines = [
         (
-            f"  - {ZONE_LABELS[z]}: Env={env_risks.get(z) or 'N/A'}%, "
+            f"  - {zone_label(z)}: Env={env_risks.get(z) or 'N/A'}%, "
             f"Micro={micro_risks.get(z) or 'N/A'}%, Overall={overall_risks.get(z) or 'N/A'}%"
         )
-        for z in ["RMW", "PL", "FGW"]
+        for z in zone_codes
     ]
 
     # Determine overall risk range
@@ -357,9 +372,9 @@ def build_comprehensive_overall_prompt(
 Zone risk summary (from YIMS official calculation):
 {chr(10).join(zone_lines)}
 
-Environmental risk ranking: {' > '.join(ZONE_LABELS[z] for z in env_ranked)}
-Microbiology risk ranking: {' > '.join(ZONE_LABELS[z] for z in micro_ranked)}
-Official overall risk ranking: {' > '.join(ZONE_LABELS[z] for z in overall_ranked)}
+Environmental risk ranking: {' > '.join(zone_label(z) for z in env_ranked)}
+Microbiology risk ranking: {' > '.join(zone_label(z) for z in micro_ranked)}
+Official overall risk ranking: {' > '.join(zone_label(z) for z in overall_ranked)}
 Overall risk range: {risk_range}%
 
 Writing guide:
@@ -385,12 +400,14 @@ def generate_comments(
     api_key: str | None = None,
     model: str = "gpt-4o",
 ) -> dict[str, str]:
-    """Generate all 9 comments using ChatGPT.
+    """Generate the full comment set using ChatGPT.
+
+    每個倉間一段環境 + 一段微生物，加三段整體評語：三倉間九段，倉間拆成
+    PL1 / PL2 的案件十一段。倉間清單來自後台風險數字的實際 key。
 
     Returns dict with keys:
-      RMW_env, PL_env, FGW_env, OVERALL_ENV,
-      RMW_micro, PL_micro, FGW_micro, OVERALL_MICRO,
-      OVERALL_COMPREHENSIVE
+      <ZONE>_env / <ZONE>_micro for each zone,
+      OVERALL_ENV, OVERALL_MICRO, OVERALL_COMPREHENSIVE
     """
     try:
         from openai import OpenAI
@@ -440,7 +457,7 @@ def generate_comments(
     micro_risks = risk_data.get("micro_risk", {})
 
     comments: dict[str, str] = {}
-    for zone in ["RMW", "PL", "FGW"]:
+    for zone in zones_from_risk(risk_data):
         comments[f"{zone}_env"] = call_gpt(
             build_env_zone_prompt(zone, metrics, env_risks.get(zone))
         )
@@ -461,17 +478,13 @@ def write_comments_md(comments: dict[str, str], outdir: Path, case_name: str) ->
     outdir.mkdir(parents=True, exist_ok=True)
     md_path = outdir / f"{case_name}_full_comments.md"
 
-    sections = [
-        ("RMW_env", "Raw Material Warehouse — Environmental Comment"),
-        ("PL_env", "Production Line — Environmental Comment"),
-        ("FGW_env", "Finished Goods Warehouse — Environmental Comment"),
-        ("OVERALL_ENV", "Overall Environmental Comment"),
-        ("RMW_micro", "Raw Material Warehouse — Microbiology Comment"),
-        ("PL_micro", "Production Line — Microbiology Comment"),
-        ("FGW_micro", "Finished Goods Warehouse — Microbiology Comment"),
-        ("OVERALL_MICRO", "Overall Microbiology Comment"),
-        ("OVERALL_COMPREHENSIVE", "Comprehensive Overall Mold Risk Comment"),
-    ]
+    zone_codes = sort_zones({key.rsplit("_", 1)[0] for key in comments
+                             if key.endswith(("_env", "_micro")) and not key.startswith("OVERALL")})
+    sections = [(f"{z}_env", f"{zone_label(z)} — Environmental Comment") for z in zone_codes]
+    sections.append(("OVERALL_ENV", "Overall Environmental Comment"))
+    sections += [(f"{z}_micro", f"{zone_label(z)} — Microbiology Comment") for z in zone_codes]
+    sections.append(("OVERALL_MICRO", "Overall Microbiology Comment"))
+    sections.append(("OVERALL_COMPREHENSIVE", "Comprehensive Overall Mold Risk Comment"))
 
     lines = [f"# {case_name} Smart EA Full Comment Draft\n"]
     for key, title in sections:

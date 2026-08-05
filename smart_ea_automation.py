@@ -26,6 +26,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from yims_payload_builder import write_yims_fill_plan
 from sheet_names import outside_sheets, resolve_zone_sheets
+from zones import BASE_ZONES, normalize_zone, parse_zone, zone_label, zone_sort_key
 
 
 BASE_NAS = Path("/Volumes/實驗室共用區MRC/#YCT資料區#/4.Smart EA")
@@ -33,12 +34,9 @@ DEFAULT_VENDOR = BASE_NAS / "案件資料區/2025/PD#EA-2511R06 1112 ID NB PYS/P
 DEFAULT_TARGET = BASE_NAS / "案件資料區/2025/PD#EA-2511R06 1112 ID NB PYS/PYS CFU and Environmental Raw Data (v2.0).xlsx"
 DEFAULT_OUTDIR = Path(__file__).resolve().parent / "outputs"
 
-ZONE_LABELS = {
-    "RMW": "Raw Material Warehouse",
-    "PL": "Production Line",
-    "FGW": "Finished Goods Warehouse",
-    "OUTSIDE": "Outside",
-}
+# 倉間全名與排序都在 zones.py（支援 PL1 / PL2 這種拆出來的倉間）。
+# 這裡保留常數只為相容舊呼叫端；新程式一律用 zones.zone_label()。
+ZONE_LABELS = {code: label for code, label, _ in BASE_ZONES}
 
 CLASS_LABELS = {
     "a.原材料": "raw materials",
@@ -132,6 +130,54 @@ def clean_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value).replace("\n", " ").strip()
+
+
+def _zone_split_issues(indoor_groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """倉間拆分不完整時列進資料檢查面板。
+
+    案件把 PL 拆成 PL1 / PL2 時，只要有一個 area 沒跟著改（或那個 area 沒定義在
+    Areas 分頁、落到用分頁名推出來的 `PL`），結果就是後台與報告多一個沒人預期的
+    倉間。這裡看最終分組結果，抓得到 Areas 分頁檢查看不到的漏網之魚。
+    """
+    zones = [clean_text(g.get("main_zone")) for g in indoor_groups]
+    by_base: dict[str, set[int]] = defaultdict(set)
+    for zone in zones:
+        parsed = parse_zone(zone)
+        if parsed is not None:
+            by_base[parsed[0]].add(parsed[1])
+
+    issues: list[dict[str, Any]] = []
+    for base, indexes in by_base.items():
+        if 0 in indexes and len(indexes) > 1:
+            numbered = ", ".join(f"{base}{i}" for i in sorted(i for i in indexes if i))
+            areas = [
+                a.get("assessment_area")
+                for g in indoor_groups
+                if clean_text(g.get("main_zone")) == base
+                for a in g.get("areas", [])
+            ]
+            issues.append(
+                {
+                    "table": "Areas",
+                    "issue": "incomplete_zone_split",
+                    "zone": base,
+                    "detail": (
+                        f"倉間已拆成 {numbered}，但 {', '.join(str(a) for a in areas)} "
+                        f"仍歸在沒編號的「{base}」，會變成獨立的第 {len(indexes)} 個倉間"
+                    ),
+                }
+            )
+    return issues
+
+
+def normalize_zone_value(value: Any) -> str:
+    """Areas 分頁的 zone 欄正規化成標準代碼（`pl1` → `PL1`）。
+
+    不合格式時原樣保留而不是清空：清空會讓這一列靜默掉進分頁名 fallback，
+    原樣留著才會被 validation 的 zone 格式檢查抓出來給人看。
+    """
+    text = clean_text(value)
+    return normalize_zone(text) or text
 
 
 def object_key(value: Any) -> str:
@@ -296,7 +342,7 @@ def read_reference(target_path: Path | None) -> ReferenceData:
             if area is not None and zone is not None:
                 area_info[normalize_area_name(area)] = {
                     "function": clean_text(function),
-                    "zone": clean_text(zone),
+                    "zone": normalize_zone_value(zone),
                 }
 
     if "ITEMLIST" in wb.sheetnames:
@@ -1116,13 +1162,12 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
         for area in area_map.values():
             by_zone[clean_text(area.get("main_zone"))].append(area)
         groups = []
-        zone_order = {"RMW": 1, "PL": 2, "FGW": 3, "OUTSIDE": 4}
-        for zone in sorted(by_zone, key=lambda z: (zone_order.get(z, 99), z)):
+        for zone in sorted(by_zone, key=zone_sort_key):
             areas = sorted(by_zone[zone], key=lambda a: sort_area_key(a["assessment_area"]))
             groups.append(
                 {
                     "main_zone": zone,
-                    "main_zone_label": ZONE_LABELS.get(zone, zone),
+                    "main_zone_label": zone_label(zone),
                     "areas": areas,
                 }
             )
@@ -1151,6 +1196,9 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
                 }
             )
 
+    indoor_groups = grouped_areas(indoor_area_map)
+    quality_issues.extend(_zone_split_issues(indoor_groups))
+
     return {
         "case_name": case_name,
         "purpose": "backend_input_payload",
@@ -1159,7 +1207,7 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
             "moisture": "Select category_to_select, enter object, then enter all values in values.",
             "microbiology": "Enter count_to_enter into the backend 數值 field. cfu_per_m2_for_check is only for manual verification.",
         },
-        "indoor": grouped_areas(indoor_area_map),
+        "indoor": indoor_groups,
         "outside": grouped_areas(outside_area_map),
         "quality_issues": quality_issues,
         "summary": {
@@ -1288,7 +1336,7 @@ def _area_info_from_areas_sheet(wb) -> dict[str, dict[str, str]]:
         if area_name:
             area_info[area_name] = {
                 "function": clean_text(function),
-                "zone": clean_text(zone),
+                "zone": normalize_zone_value(zone),
             }
     return area_info
 

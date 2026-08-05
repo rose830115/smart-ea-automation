@@ -20,6 +20,7 @@ except ImportError:
 
 from yims_payload_builder import (
     build_yims_extends_data,
+    describe_main_area_matching,
     load_comments,
     preserve_human_managed_main_area_fields,
 )
@@ -203,6 +204,9 @@ class YimsApiClient:
         self.session = cloudscraper.create_scraper() if _HAS_CLOUDSCRAPER else requests.Session()
         self.token: str | None = None
         self.user: dict[str, Any] | None = None
+        # 倉間配對明細 / 警告, build_save_payload 時填入 (見 preserve_human_managed_main_area_fields)
+        self.last_main_area_matching: list[dict[str, Any]] = []
+        self.last_main_area_warnings: list[str] = []
         self.session.headers.update(
             {
                 "Accept": "application/json, text/plain, */*",
@@ -373,10 +377,12 @@ class YimsApiClient:
             save_payload["extends_data"][key] = value
         # 存檔前把後台既有的人工欄位 (可視性風險、照片、平面圖等) 搬回新 payload,
         # 避免工具的空白預設覆蓋掉同事已在後台選好項目 / 上傳的照片。
-        preserve_human_managed_main_area_fields(
+        match_report = preserve_human_managed_main_area_fields(
             save_payload["extends_data"].get("main_area_array") or [],
             existing_main_areas,
         )
+        self.last_main_area_matching = match_report
+        self.last_main_area_warnings = describe_main_area_matching(match_report)
         normalize_extends_data_for_save(save_payload["extends_data"])
         save_payload["service_id"] = service_id
         save_payload["filesFormdata"] = {}
@@ -503,6 +509,8 @@ def run_api_fill(args: argparse.Namespace) -> dict[str, Any]:
             if isinstance(zone, dict)
         ),
         "preview_payload": str(preview_path),
+        "main_area_matching": getattr(client, "last_main_area_matching", []),
+        "main_area_warnings": getattr(client, "last_main_area_warnings", []),
         "saved": False,
     }
 
