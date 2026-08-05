@@ -59,6 +59,11 @@ def sheets_of(path: Path) -> set[str]:
         return set()
 
 
+# 這些案件是拿來試工具的，輸入檔每測一次就換一組，拿它跟基準比只會看到
+# 「兩份不同輸入的差異」，把真正的回歸淹掉。真實客戶案件才有回歸價值。
+EXCLUDED_CASES = {"SEA_test", "test", "DEMO"}
+
+
 def discover_cases() -> list[dict[str, Any]]:
     """從 uploads/ 找出每個案件最後一次上傳的輸入檔。"""
     latest: dict[str, tuple[int, Path]] = {}
@@ -69,6 +74,8 @@ def discover_cases() -> list[dict[str, Any]]:
         if not m or not list(d.glob("*.xlsx")):
             continue
         case, ts = m.group(1), int(m.group(2))
+        if case in EXCLUDED_CASES:
+            continue
         if case not in latest or ts > latest[case][0]:
             latest[case] = (ts, d)
 

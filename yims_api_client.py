@@ -6,7 +6,6 @@ import json
 import os
 import statistics
 import sys
-import time
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -55,86 +54,6 @@ def rounded_mean(values: list[Any], digits: int = 1) -> float:
 
 def normalize_number(value: float) -> int | float:
     return int(value) if float(value).is_integer() else value
-
-
-ZONE_NAME_TO_CODE = {
-    "rmw": "RMW",
-    "raw material warehouse": "RMW",
-    "raw materials warehouse": "RMW",
-    "raw material": "RMW",
-    "raw materials": "RMW",
-    "原材料倉": "RMW",
-    "原料倉": "RMW",
-    "原物料倉": "RMW",
-    "pl": "PL",
-    "production line": "PL",
-    "production": "PL",
-    "生產線": "PL",
-    "fgw": "FGW",
-    "finished goods warehouse": "FGW",
-    "finished goods": "FGW",
-    "成品倉": "FGW",
-}
-
-
-def parse_float(value: Any) -> float | None:
-    if value is None or value == "":
-        return None
-    try:
-        return float(str(value).replace(",", ""))
-    except (TypeError, ValueError):
-        return None
-
-
-def _extract_chart_rows(chart_obj: Any) -> list:
-    """Extract row list from a YIMS chart object, trying common nesting paths."""
-    if not isinstance(chart_obj, dict):
-        return []
-    # Try chart_item.en (some chart types use this wrapper)
-    chart_item = chart_obj.get("chart_item")
-    if isinstance(chart_item, dict):
-        rows = chart_item.get("en") or chart_item.get("zh-tw") or chart_item.get("zh") or []
-        if isinstance(rows, list) and rows:
-            return rows
-    # Fall back to direct en / zh key
-    rows = chart_obj.get("en") or chart_obj.get("zh-tw") or chart_obj.get("zh") or []
-    return rows if isinstance(rows, list) else []
-
-
-def zone_code_from_label(value: Any) -> str | None:
-    label = str(value or "").strip()
-    if not label:
-        return None
-    normalized = " ".join(label.replace("／", "/").split()).casefold()
-    if normalized in ZONE_NAME_TO_CODE:
-        return ZONE_NAME_TO_CODE[normalized]
-    compact = normalized.replace(" ", "")
-    return ZONE_NAME_TO_CODE.get(compact)
-
-
-def chart_rows_to_zone_risk(rows: list[Any]) -> dict[str, float | None]:
-    risks: dict[str, float | None] = {"RMW": None, "PL": None, "FGW": None}
-    for row in rows:
-        if isinstance(row, dict):
-            label = row.get("label") or row.get("name") or row.get("area") or row.get("zone")
-            value = row.get("value") or row.get("risk") or row.get("percentage")
-        elif isinstance(row, list) and len(row) >= 2:
-            label, value = row[0], row[1]
-        else:
-            continue
-        zone_code = zone_code_from_label(label)
-        if zone_code:
-            risks[zone_code] = parse_float(value)
-    return risks
-
-
-def risk_section_has_values(risk_data: dict[str, Any], key: str) -> bool:
-    values = risk_data.get(key)
-    return isinstance(values, dict) and any(value is not None for value in values.values())
-
-
-def risk_data_ready(risk_data: dict[str, Any]) -> bool:
-    return risk_section_has_values(risk_data, "env_risk") and risk_section_has_values(risk_data, "micro_risk")
 
 
 def has_analysis_parameter_selection(test_result: dict[str, Any]) -> bool:
@@ -403,83 +322,6 @@ class YimsApiClient:
         response.raise_for_status()
         return response.json()
 
-    def get_print_data(self, order_id: str, service_id: int) -> list[dict[str, Any]]:
-        payload = self.request_json(
-            "GET",
-            f"/api/orders/print/data?orders_id={order_id}&service_id={service_id}",
-            referer=(
-                f"{self.base_url}/admin/orders/html-to-pdf/smart_ea"
-                f"?orders_id={order_id}&services_id={service_id}&lang=en"
-            ),
-        )
-        data = payload.get("data", [])
-        return data if isinstance(data, list) else []
-
-    def get_print_risk_data(self, order_id: str, service_id: int) -> dict[str, Any]:
-        print_data = self.get_print_data(order_id, service_id)
-        raw_charts: dict[str, Any] = {}
-        risk_data: dict[str, Any] = {
-            "source": "/api/orders/print/data",
-            "order_id": order_id,
-            "service_id": service_id,
-            "env_risk": {"RMW": None, "PL": None, "FGW": None},
-            "micro_risk": {"RMW": None, "PL": None, "FGW": None},
-            "overall_risk": {"RMW": None, "PL": None, "FGW": None},
-        }
-
-        for item in print_data:
-            if not isinstance(item, dict):
-                continue
-            item_type = item.get("type")
-            data = item.get("data") if isinstance(item.get("data"), dict) else {}
-            chart_data = data.get("chart_data")
-
-            if item_type == "overall_environmental_risk_analysis_line_chart" and isinstance(chart_data, dict):
-                env_chart = chart_data.get("environmental_mold_risk")
-                if isinstance(env_chart, dict):
-                    rows = _extract_chart_rows(env_chart)
-                    risk_data["env_risk"] = chart_rows_to_zone_risk(rows)
-                    raw_charts["environmental_mold_risk"] = env_chart
-
-            elif item_type == "overall_microbiological_risk_analysis" and isinstance(chart_data, dict):
-                rows = _extract_chart_rows(chart_data)
-                risk_data["micro_risk"] = chart_rows_to_zone_risk(rows)
-                raw_charts["microbiological_risk"] = chart_data
-
-            elif item_type == "overall_mold_risk_detection_result" and isinstance(chart_data, dict):
-                rows = _extract_chart_rows(chart_data)
-                risk_data["overall_risk"] = chart_rows_to_zone_risk(rows)
-                raw_charts["overall_mold_risk"] = chart_data
-
-        risk_data["raw_charts"] = raw_charts
-        risk_data["debug_item_types"] = [
-            item.get("type") for item in print_data if isinstance(item, dict)
-        ]
-        return risk_data
-
-    def get_print_risk_data_with_retry(
-        self,
-        order_id: str,
-        service_id: int,
-        attempts: int = 5,
-        delay_seconds: float = 2.0,
-    ) -> tuple[dict[str, Any] | None, str | None]:
-        last_data: dict[str, Any] | None = None
-        last_error: str | None = None
-        for attempt in range(1, attempts + 1):
-            try:
-                risk_data = self.get_print_risk_data(order_id, service_id)
-                risk_data["fetch_attempts"] = attempt
-                if risk_data_ready(risk_data):
-                    return risk_data, None
-                last_data = risk_data
-                last_error = "後台尚未回傳環境面或微生物面風險數字。"
-            except requests.HTTPError as exc:
-                last_error = f"{exc}"
-            if attempt < attempts:
-                time.sleep(delay_seconds)
-        return last_data, last_error
-
 
 def run_api_fill(args: argparse.Namespace) -> dict[str, Any]:
     backend_payload = load_json(args.payload)
@@ -521,32 +363,11 @@ def run_api_fill(args: argparse.Namespace) -> dict[str, Any]:
         verify_payload = client.get_test_result(args.order_id, service_id)
         verify_path = outdir / f"yims_{args.order_id}_api_verify.json"
         verify_path.write_text(json.dumps(verify_payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        # 風險資料抓取是儲存後的下游動作; 後台前端若被弄壞會回 500,
-        # 但儲存本身已完成, 不該讓整個流程 crash
-        risk_path = outdir / f"yims_{args.order_id}_risk_data.json"
-        risk_error: str | None = None
-        risk_data, risk_error = client.get_print_risk_data_with_retry(args.order_id, service_id)
-        if risk_data is not None:
-            if risk_error:
-                risk_data["risk_data_incomplete"] = True
-                risk_data["risk_data_error"] = risk_error
-            risk_path.write_text(json.dumps(risk_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        else:
-            risk_path.write_text(
-                json.dumps(
-                    {"error": risk_error, "order_id": args.order_id, "service_id": service_id},
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
-            )
         result.update(
             {
                 "saved": True,
                 "response": str(response_path),
                 "verify": str(verify_path),
-                "risk_data": str(risk_path),
-                "risk_data_error": risk_error,
                 "verified_main_area_count": len(verify_payload.get("extends_data", {}).get("main_area_array", [])),
             }
         )

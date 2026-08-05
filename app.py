@@ -21,7 +21,6 @@ from validation import validate_inputs
 PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_ROOT = PROJECT_DIR / "web_outputs"
 UPLOAD_ROOT = PROJECT_DIR / "uploads"
-COMMENT_GENERATOR_VERSION = "cross-zone-overall-20260513-v3"
 
 IS_CLOUD = str(PROJECT_DIR).startswith("/mount/src")
 
@@ -210,7 +209,6 @@ def run_yims_bot(
     logs_dir = outdir / "99_logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     screenshot_path = logs_dir / f"yims_{order_id}_{'saved' if save else 'preview'}.png"
-    risk_json_path = outdir / f"yims_{order_id}_risk_data.json"
     cmd = [
         sys.executable,
         str(PROJECT_DIR / "yims_api_client.py"),
@@ -221,8 +219,6 @@ def run_yims_bot(
         "--outdir",
         str(outdir),
     ]
-    if paths.get("metrics_json"):
-        cmd.extend(["--metrics", str(paths["metrics_json"])])
     if save:
         cmd.append("--save")
 
@@ -252,23 +248,9 @@ def run_yims_bot(
         "stdout": completed.stdout,
         "stderr": completed.stderr,
         "screenshot": screenshot_path,
-        "risk_json": risk_json_path,
         "started": started,
         "save": save,
     }
-
-
-def risk_numbers_available(risk_data: dict[str, Any]) -> bool:
-    for key in ("env_risk", "micro_risk", "overall_risk"):
-        values = risk_data.get(key)
-        if isinstance(values, dict) and any(value is not None for value in values.values()):
-            return True
-    return False
-
-
-def risk_section_available(risk_data: dict[str, Any], key: str) -> bool:
-    values = risk_data.get(key)
-    return isinstance(values, dict) and any(value is not None for value in values.values())
 
 
 st.set_page_config(page_title="MRC Smart EA Tool", layout="wide")
@@ -278,13 +260,8 @@ if not check_password():
 
 install_chromium()
 
-if st.session_state.get("comment_generator_version") != COMMENT_GENERATOR_VERSION:
-    st.session_state.pop("last_generated_comments", None)
-    st.session_state.pop("last_comments_path", None)
-    st.session_state["comment_generator_version"] = COMMENT_GENERATOR_VERSION
-
 st.title("MRC Smart EA 小工具")
-st.caption("案件資料整理、環境評論草稿、後台輸入資料包與後台填表")
+st.caption("案件資料整理、後台輸入資料包與後台填表")
 
 with st.sidebar:
     st.header("案件設定")
@@ -384,7 +361,7 @@ if input_mode == MODE_FRESH and source_ready and vendor_path and outdir:
     )
     if run_button:
         try:
-            with st.spinner("處理中，正在整理 Excel、產生評論與輸出檔案..."):
+            with st.spinner("處理中，正在整理 Excel 與輸出檔案..."):
                 result = run_case(case_name, vendor_path, target_path, outdir)
             st.session_state["last_result"] = result
             st.session_state["last_cfu_data"] = result.get("cfu_data", [])
@@ -516,122 +493,3 @@ if result:
             st.error("後台動作失敗。")
             st.code(yims_result["stderr"] or yims_result["stdout"], language="text")
             st.warning("若錯誤內容提到尚未登入，請先在工具主機終端機手動登入一次後台，或設定 YIMS_ACCOUNT / YIMS_PASSWORD。")
-
-
-    # -----------------------------------------------------------------------
-    # Phase 3: Generate comments using ChatGPT after YIMS risk data is ready
-    # -----------------------------------------------------------------------
-    yims_result = st.session_state.get("last_yims_result")
-    if yims_result and yims_result.get("returncode") == 0:
-        st.divider()
-        st.subheader("第三步：後台風險確認與評論生成")
-
-        risk_json_path: Path = yims_result.get("risk_json")
-        risk_data: dict = {}
-
-        if risk_json_path and risk_json_path.exists():
-            try:
-                risk_data = json.loads(risk_json_path.read_text(encoding="utf-8"))
-                if "error" in risk_data and "env_risk" not in risk_data:
-                    st.warning(
-                        "✅ 資料已儲存到後台，但下游「風險圖表資料」抓取失敗（後台 500）。\n\n"
-                        "常見原因：該案件尚未在後台基本資料設定「分析參數選擇」，或後台前端的圖表狀態異常。"
-                        "請手動到後台確認該案件，並在下方手動填入風險值。"
-                    )
-                    st.code(risk_data["error"], language="text")
-                    risk_data = {}
-                elif not risk_numbers_available(risk_data):
-                    st.warning(
-                        "後台沒有回傳發霉風險數字。請確認後台基本資料已設定「分析參數選擇」，"
-                        "並且可視性風險資料已由人工確認儲存；確認後再重新執行後台儲存。"
-                    )
-                elif not risk_section_available(risk_data, "env_risk") or not risk_section_available(risk_data, "micro_risk"):
-                    st.warning(
-                        "後台風險數字不完整：環境面或微生物面尚未回傳。"
-                        "請到後台確認風險圖表已正常顯示後，再重新執行後台儲存。"
-                    )
-                else:
-                    st.success(f"已從後台自動抓取風險數據：`{risk_json_path.name}`")
-            except Exception:
-                st.warning("風險數據 JSON 讀取失敗，請手動填入下方數值。")
-        else:
-            st.warning("尚未抓取到後台風險數據（請先執行後台填表）。可手動填入下方數值。")
-
-        # Show report settings screenshot if available
-        risk_screenshot = risk_data.get("risk_screenshot")
-        if risk_screenshot and Path(risk_screenshot).exists():
-            with st.expander("後台報告設定截圖", expanded=True):
-                st.image(risk_screenshot, use_container_width=True)
-
-        # Show raw table data if scraped
-        raw_tables = risk_data.get("raw_tables", [])
-        if raw_tables:
-            with st.expander("後台抓取到的原始表格", expanded=False):
-                for tbl in raw_tables[:3]:
-                    st.dataframe(arrow_safe(tbl))
-
-        # Risk number confirmation / manual input
-        st.markdown("**確認或修正後台風險數值**（若自動抓取正確可直接跳過）")
-        auto_env = risk_data.get("env_risk", {})
-        auto_micro = risk_data.get("micro_risk", {})
-        auto_overall = risk_data.get("overall_risk", {})
-
-        risk_cols = st.columns(3)
-        with risk_cols[0]:
-            st.markdown("**環境面 Environmental Mold Risk (%)**")
-            env_rmw = st.number_input("RMW", value=float(auto_env.get("RMW") or 0.0), min_value=0.0, max_value=100.0, step=0.1, key="env_rmw")
-            env_pl  = st.number_input("PL",  value=float(auto_env.get("PL") or 0.0),  min_value=0.0, max_value=100.0, step=0.1, key="env_pl")
-            env_fgw = st.number_input("FGW", value=float(auto_env.get("FGW") or 0.0), min_value=0.0, max_value=100.0, step=0.1, key="env_fgw")
-        with risk_cols[1]:
-            st.markdown("**微生物面 Microbiology Mold Risk (%)**")
-            micro_rmw = st.number_input("RMW", value=float(auto_micro.get("RMW") or 0.0), min_value=0.0, max_value=100.0, step=0.1, key="micro_rmw")
-            micro_pl  = st.number_input("PL",  value=float(auto_micro.get("PL") or 0.0),  min_value=0.0, max_value=100.0, step=0.1, key="micro_pl")
-            micro_fgw = st.number_input("FGW", value=float(auto_micro.get("FGW") or 0.0), min_value=0.0, max_value=100.0, step=0.1, key="micro_fgw")
-        with risk_cols[2]:
-            st.markdown("**整體 Overall Mold Risk (%)**")
-            overall_rmw = st.number_input("RMW", value=float(auto_overall.get("RMW") or 0.0), min_value=0.0, max_value=100.0, step=0.1, key="overall_rmw")
-            overall_pl  = st.number_input("PL",  value=float(auto_overall.get("PL") or 0.0),  min_value=0.0, max_value=100.0, step=0.1, key="overall_pl")
-            overall_fgw = st.number_input("FGW", value=float(auto_overall.get("FGW") or 0.0), min_value=0.0, max_value=100.0, step=0.1, key="overall_fgw")
-
-        confirmed_risk_data = {
-            "env_risk":   {"RMW": env_rmw or None,   "PL": env_pl or None,   "FGW": env_fgw or None},
-            "micro_risk": {"RMW": micro_rmw or None, "PL": micro_pl or None, "FGW": micro_fgw or None},
-            "overall_risk": {"RMW": overall_rmw or None, "PL": overall_pl or None, "FGW": overall_fgw or None},
-        }
-
-        if st.button("產生評論文字檔", type="primary", use_container_width=True):
-            try:
-                from rule_based_comment_generator import generate_rule_based_comments, load_json, write_comments_txt
-
-                backend_payload = load_json(paths["backend_payload"])
-                generated = generate_rule_based_comments(backend_payload, confirmed_risk_data)
-                comments_path = write_comments_txt(generated, result["outdir"], case_name)
-                st.session_state["last_generated_comments"] = generated
-                st.session_state["last_comments_path"] = comments_path
-                st.success("評論文字檔已產生。")
-            except Exception as exc:
-                st.error("評論文字檔產生失敗。")
-                st.exception(exc)
-
-        generated_comments = st.session_state.get("last_generated_comments")
-        if generated_comments:
-            sections = [
-                ("RMW_env", "Raw Material Warehouse — Environmental"),
-                ("PL_env", "Production Line — Environmental"),
-                ("FGW_env", "Finished Goods Warehouse — Environmental"),
-                ("OVERALL_ENV", "Overall Environmental Comment"),
-                ("RMW_micro", "Raw Material Warehouse — Microbiology"),
-                ("PL_micro", "Production Line — Microbiology"),
-                ("FGW_micro", "Finished Goods Warehouse — Microbiology"),
-                ("OVERALL_MICRO", "Overall Microbiology Comment"),
-                ("OVERALL_COMPREHENSIVE", "Comprehensive Overall Mold Risk Comment"),
-            ]
-            for key, title in sections:
-                with st.expander(title, expanded=(key == "OVERALL_COMPREHENSIVE")):
-                    st.write(generated_comments.get(key, "（未生成）"))
-
-            comments_path = st.session_state.get("last_comments_path")
-            if comments_path and Path(comments_path).exists():
-                path_obj = Path(comments_path)
-                download_label = "下載完整評論文字檔" if path_obj.suffix == ".txt" else "下載完整評論 Markdown"
-                show_download(path_obj, download_label)
