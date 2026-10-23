@@ -451,6 +451,8 @@ def build_moisture_rows(area: dict[str, Any]) -> list[dict[str, Any]]:
         row["object_moisture_content_average"] = rounded_avg(values, 1)
         row["object_moisture_content_failure_rate"] = failure_rate(values)
         rows.append(row)
+    # 依後台下拉類別 id 升冪分組（同類放一起、同類內維持原序）；對不到後台類別(id=0)排最後
+    rows.sort(key=lambda r: r["object_moisture_content_type"] or float("inf"))
     return rows or [default_moisture_row()]
 
 
