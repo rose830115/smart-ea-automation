@@ -1,0 +1,907 @@
+{
+  "areas": {
+    "FGW/Area 7": {
+      "checking_points": [
+        "10"
+      ],
+      "env": {
+        "co2_ppm": [
+          "470"
+        ],
+        "humidity_percent": [
+          "53.4"
+        ],
+        "pm10_ug_m3": [
+          "22.1"
+        ],
+        "temperature_c": [
+          "26.2"
+        ],
+        "wind_flow_m_s": [
+          "0.68"
+        ]
+      },
+      "function": "Dry Room",
+      "microbiology": [
+        "10|17|成品|Finished Goods|1|['Penicillium spp.']"
+      ],
+      "moisture": [
+        "10|成品|Finished Goods|['7.5', '7.8', '8.2']",
+        "10|設備|Shelf|['7.9', '8.1', '8.4']"
+      ]
+    },
+    "FGW/Area 8": {
+      "checking_points": [
+        "11",
+        "12"
+      ],
+      "env": {
+        "co2_ppm": [
+          "462",
+          "485"
+        ],
+        "humidity_percent": [
+          "52.7",
+          "54.9"
+        ],
+        "pm10_ug_m3": [
+          "21.8",
+          "24.3"
+        ],
+        "temperature_c": [
+          "26.5",
+          "26.8"
+        ],
+        "wind_flow_m_s": [
+          "0.65",
+          "0.72"
+        ]
+      },
+      "function": "Storage Area",
+      "microbiology": [
+        "11|18|設備|Shelf|2|['Aspergillus spp.']",
+        "11|19|外包裝|Carton Box|1|['Cladosporium spp.']",
+        "12|20|成品|Finished Goods|0.01|[]"
+      ],
+      "moisture": [
+        "11|外包裝|Carton Box|['8.7', '9.1', '9.4']",
+        "11|成品|Finished Goods|['8.2', '8.4', '8.9']",
+        "12|成品|Finished Goods|['7.9', '8', '8.3']",
+        "12|設備|Wooden Pallet|['8.8', '9.2', '9.5']"
+      ]
+    },
+    "PL1/Area 3": {
+      "checking_points": [
+        "4",
+        "5"
+      ],
+      "env": {
+        "co2_ppm": [
+          "685",
+          "712"
+        ],
+        "humidity_percent": [
+          "74.6",
+          "77.3"
+        ],
+        "pm10_ug_m3": [
+          "62.4",
+          "68.1"
+        ],
+        "temperature_c": [
+          "31.2",
+          "31.8"
+        ],
+        "wind_flow_m_s": [
+          "0.12",
+          "0.18"
+        ]
+      },
+      "function": "Cutting Area",
+      "microbiology": [
+        "4|6|生產設備|Table|20|['Aspergillus spp.', 'Penicillium spp.']",
+        "4|7|原材料|Leather|13|['Aspergillus spp.', 'Cladosporium spp.']",
+        "5|10|建築本體|Wall|18|['Penicillium spp.']",
+        "5|8|半成品|Semi-finished Goods|67|['Aspergillus spp.', 'Penicillium spp.']",
+        "5|9|設備|Wooden Pallet|53|['Aspergillus spp.', 'Cladosporium spp.']"
+      ],
+      "moisture": [
+        "4|半成品|Semi-finished Goods|['12.8', '13.2', '14.1']",
+        "4|生產設備|Table|['11.6', '11.9', '12.2']",
+        "4|設備|Worker Tool Bag|['10.5', '10.8', '11.3']",
+        "5|半成品|Semi-finished Goods|['13.9', '14.6', '15.2']",
+        "5|建築本體|Wall|['11.9', '12.4', '12.8']",
+        "5|設備|Wooden Pallet|['13.1', '13.8', '14.3']"
+      ]
+    },
+    "PL1/Area 4": {
+      "checking_points": [
+        "6"
+      ],
+      "env": {
+        "co2_ppm": [
+          "648"
+        ],
+        "humidity_percent": [
+          "72.1"
+        ],
+        "pm10_ug_m3": [
+          "58.7"
+        ],
+        "temperature_c": [
+          "30.9"
+        ],
+        "wind_flow_m_s": [
+          "0.22"
+        ]
+      },
+      "function": "Assembly",
+      "microbiology": [
+        "6|11|設備|Shelf|17|['Aspergillus spp.', 'Penicillium spp.']",
+        "6|12|半成品|Semi-finished Goods|8|['Aspergillus spp.']"
+      ],
+      "moisture": [
+        "6|半成品|Semi-finished Goods|['12.2', '12.9', '13.4']",
+        "6|設備|Shelf|['10.6', '11.1', '11.8']"
+      ]
+    },
+    "PL2/Area 5": {
+      "checking_points": [
+        "7",
+        "8"
+      ],
+      "env": {
+        "co2_ppm": [
+          "552",
+          "575"
+        ],
+        "humidity_percent": [
+          "59.8",
+          "61.5"
+        ],
+        "pm10_ug_m3": [
+          "31.2",
+          "33.8"
+        ],
+        "temperature_c": [
+          "29.1",
+          "29.4"
+        ],
+        "wind_flow_m_s": [
+          "0.46",
+          "0.51"
+        ]
+      },
+      "function": "Printing Area",
+      "microbiology": [
+        "7|13|生產設備|Table|3|['Cladosporium spp.']",
+        "8|14|半成品|Semi-finished Goods|7|['Aspergillus spp.', 'Penicillium spp.']",
+        "8|15|設備|Worker Tool Bag|7|['Aspergillus spp.']"
+      ],
+      "moisture": [
+        "7|原材料|Ink|['8.1', '8.4', '8.9']",
+        "7|生產設備|Table|['10.2', '9.6', '9.8']",
+        "8|半成品|Semi-finished Goods|['10.4', '10.9', '9.8']",
+        "8|外包裝|Carton Box|['10.2', '10.7', '9.6']"
+      ]
+    },
+    "PL2/Area 6": {
+      "checking_points": [
+        "9"
+      ],
+      "env": {
+        "co2_ppm": [
+          "588"
+        ],
+        "humidity_percent": [
+          "62.3"
+        ],
+        "pm10_ug_m3": [
+          "35.6"
+        ],
+        "temperature_c": [
+          "29.7"
+        ],
+        "wind_flow_m_s": [
+          "0.44"
+        ]
+      },
+      "function": "Laminating Area",
+      "microbiology": [
+        "9|16|建築本體|Wall|2|['Cladosporium spp.']"
+      ],
+      "moisture": [
+        "9|半成品|Semi-finished Goods|['10.3', '9.4', '9.7']",
+        "9|建築本體|Wall|['10.1', '9.5', '9.9']"
+      ]
+    },
+    "RMW/Area 1": {
+      "checking_points": [
+        "1"
+      ],
+      "env": {
+        "co2_ppm": [
+          "520"
+        ],
+        "humidity_percent": [
+          "66.2"
+        ],
+        "pm10_ug_m3": [
+          "38"
+        ],
+        "temperature_c": [
+          "28.5"
+        ],
+        "wind_flow_m_s": [
+          "0.35"
+        ]
+      },
+      "function": "Incoming Area",
+      "microbiology": [
+        "1|1|外包裝|Carton Box|5|['Aspergillus spp.', 'Penicillium spp.']",
+        "1|2|原材料|Leather|1|['Cladosporium spp.']"
+      ],
+      "moisture": [
+        "1|外包裝|Carton Box|['11.4', '12.8', '13.1']",
+        "1|設備|Wooden Pallet|['10.7', '11.2', '12.3']"
+      ]
+    },
+    "RMW/Area 2": {
+      "checking_points": [
+        "2",
+        "3"
+      ],
+      "env": {
+        "co2_ppm": [
+          "510",
+          "545"
+        ],
+        "humidity_percent": [
+          "65.1",
+          "68.4"
+        ],
+        "pm10_ug_m3": [
+          "36.2",
+          "41.5"
+        ],
+        "temperature_c": [
+          "28.1",
+          "28.8"
+        ],
+        "wind_flow_m_s": [
+          "0.28",
+          "0.42"
+        ]
+      },
+      "function": "Storage Area",
+      "microbiology": [
+        "2|3|設備|Wooden Pallet|7|['Aspergillus spp.', 'Cladosporium spp.']",
+        "2|4|原材料|Leather|2|['Penicillium spp.']",
+        "3|5|設備|Wooden Rack|4|['Aspergillus spp.']"
+      ],
+      "moisture": [
+        "2|原材料|Leather|['10.4', '9.2', '9.8']",
+        "2|外包裝|Carton Box|['12.9', '13.5', '14.2']",
+        "2|設備|Wooden Rack|['11.5', '11.8', '12.1']",
+        "3|原材料|Fabric|['8.8', '9.1', '9.6']",
+        "3|原材料|Leather|['8.7', '8.9', '9.4']"
+      ]
+    }
+  },
+  "outside": "[{\"areas\": [{\"assessment_area\": \"Outside\", \"checking_points\": [\"O1\", \"O2\"], \"env\": {\"co2_ppm\": [430, 425], \"humidity_percent\": [79.5, 78.2], \"pm10_ug_m3\": [71.2, 68.9], \"temperature_c\": [32.4, 32.1], \"wind_flow_m_s\": [0.85, 0.92]}, \"function\": \"Outdoor reference\", \"main_zone\": \"OUTSIDE\", \"microbiology\": [], \"moisture\": []}], \"main_zone\": \"OUTSIDE\", \"main_zone_label\": \"Outside\"}]",
+  "quality_issues": [],
+  "summary": {
+    "env_rows": 14,
+    "indoor_area_count": 8,
+    "microbiology_rows": 20,
+    "moisture_rows": 27,
+    "quality_issue_count": 0
+  },
+  "yims": {
+    "{\"en\": \"Finished Goods Warehouse\", \"zh-tw\": \"\"}/{\"en\": \"Area 7\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 3333.3,
+          "samples": [
+            [
+              "17",
+              "1",
+              3333.333333333333
+            ]
+          ],
+          "species": [
+            106
+          ],
+          "type": 3
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 7.8,
+          "fail_rate": 0,
+          "type": 3,
+          "values": [
+            7.8,
+            8.2,
+            7.5
+          ]
+        },
+        {
+          "avg": 8.1,
+          "fail_rate": 0,
+          "type": 6,
+          "values": [
+            8.1,
+            7.9,
+            8.4
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 0
+    },
+    "{\"en\": \"Finished Goods Warehouse\", \"zh-tw\": \"\"}/{\"en\": \"Area 8\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 6666.7,
+          "samples": [
+            [
+              "18",
+              "2",
+              6666.666666666667
+            ]
+          ],
+          "species": [
+            107
+          ],
+          "type": 6
+        },
+        {
+          "cfu_avg": 3333.3,
+          "samples": [
+            [
+              "19",
+              "1",
+              3333.333333333333
+            ]
+          ],
+          "species": [
+            110
+          ],
+          "type": 5
+        },
+        {
+          "cfu_avg": 33.3,
+          "samples": [
+            [
+              "20",
+              "0.01",
+              33.33333333333334
+            ]
+          ],
+          "species": [
+            0
+          ],
+          "type": 3
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 8.5,
+          "fail_rate": 0,
+          "type": 3,
+          "values": [
+            8.4,
+            8.9,
+            8.2
+          ]
+        },
+        {
+          "avg": 9.1,
+          "fail_rate": 0,
+          "type": 5,
+          "values": [
+            9.1,
+            8.7,
+            9.4
+          ]
+        },
+        {
+          "avg": 8.1,
+          "fail_rate": 0,
+          "type": 3,
+          "values": [
+            7.9,
+            8.3,
+            8
+          ]
+        },
+        {
+          "avg": 9.2,
+          "fail_rate": 0,
+          "type": 6,
+          "values": [
+            9.2,
+            8.8,
+            9.5
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 0
+    },
+    "{\"en\": \"PL1\", \"zh-tw\": \"\"}/{\"en\": \"Area 3\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 66666.7,
+          "samples": [
+            [
+              "6",
+              "20",
+              66666.66666666667
+            ]
+          ],
+          "species": [
+            107,
+            106
+          ],
+          "type": 11
+        },
+        {
+          "cfu_avg": 43333.3,
+          "samples": [
+            [
+              "7",
+              "13",
+              43333.33333333334
+            ]
+          ],
+          "species": [
+            107,
+            110
+          ],
+          "type": 1
+        },
+        {
+          "cfu_avg": 223333.3,
+          "samples": [
+            [
+              "8",
+              "67",
+              223333.3333333333
+            ]
+          ],
+          "species": [
+            107,
+            106
+          ],
+          "type": 2
+        },
+        {
+          "cfu_avg": 176666.7,
+          "samples": [
+            [
+              "9",
+              "53",
+              176666.6666666667
+            ]
+          ],
+          "species": [
+            107,
+            110
+          ],
+          "type": 6
+        },
+        {
+          "cfu_avg": 60000,
+          "samples": [
+            [
+              "10",
+              "18",
+              60000.00000000001
+            ]
+          ],
+          "species": [
+            106
+          ],
+          "type": 7
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 13.4,
+          "fail_rate": 100,
+          "type": 2,
+          "values": [
+            13.2,
+            14.1,
+            12.8
+          ]
+        },
+        {
+          "avg": 11.9,
+          "fail_rate": 100,
+          "type": 0,
+          "values": [
+            11.6,
+            12.2,
+            11.9
+          ]
+        },
+        {
+          "avg": 10.9,
+          "fail_rate": 100,
+          "type": 6,
+          "values": [
+            10.8,
+            11.3,
+            10.5
+          ]
+        },
+        {
+          "avg": 14.6,
+          "fail_rate": 100,
+          "type": 2,
+          "values": [
+            14.6,
+            15.2,
+            13.9
+          ]
+        },
+        {
+          "avg": 13.7,
+          "fail_rate": 100,
+          "type": 6,
+          "values": [
+            13.8,
+            14.3,
+            13.1
+          ]
+        },
+        {
+          "avg": 12.4,
+          "fail_rate": 100,
+          "type": 7,
+          "values": [
+            12.4,
+            11.9,
+            12.8
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 100
+    },
+    "{\"en\": \"PL1\", \"zh-tw\": \"\"}/{\"en\": \"Area 4\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 56666.7,
+          "samples": [
+            [
+              "11",
+              "17",
+              56666.66666666667
+            ]
+          ],
+          "species": [
+            107,
+            106
+          ],
+          "type": 6
+        },
+        {
+          "cfu_avg": 46666.7,
+          "samples": [
+            [
+              "12",
+              "8",
+              46666.66666666667
+            ]
+          ],
+          "species": [
+            107
+          ],
+          "type": 2
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 12.8,
+          "fail_rate": 100,
+          "type": 2,
+          "values": [
+            12.9,
+            13.4,
+            12.2
+          ]
+        },
+        {
+          "avg": 11.2,
+          "fail_rate": 100,
+          "type": 6,
+          "values": [
+            11.1,
+            10.6,
+            11.8
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 100
+    },
+    "{\"en\": \"PL2\", \"zh-tw\": \"\"}/{\"en\": \"Area 5\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 10000,
+          "samples": [
+            [
+              "13",
+              "3",
+              10000
+            ]
+          ],
+          "species": [
+            110
+          ],
+          "type": 11
+        },
+        {
+          "cfu_avg": 23333.3,
+          "samples": [
+            [
+              "14",
+              "7",
+              23333.33333333334
+            ]
+          ],
+          "species": [
+            107,
+            106
+          ],
+          "type": 2
+        },
+        {
+          "cfu_avg": 23333.3,
+          "samples": [
+            [
+              "15",
+              "7",
+              23333.33333333334
+            ]
+          ],
+          "species": [
+            107
+          ],
+          "type": 6
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 8.5,
+          "fail_rate": 0,
+          "type": 1,
+          "values": [
+            8.4,
+            8.9,
+            8.1
+          ]
+        },
+        {
+          "avg": 9.9,
+          "fail_rate": 33.3,
+          "type": 0,
+          "values": [
+            9.6,
+            10.2,
+            9.8
+          ]
+        },
+        {
+          "avg": 10.4,
+          "fail_rate": 66.7,
+          "type": 2,
+          "values": [
+            10.4,
+            9.8,
+            10.9
+          ]
+        },
+        {
+          "avg": 10.2,
+          "fail_rate": 66.7,
+          "type": 5,
+          "values": [
+            10.2,
+            9.6,
+            10.7
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 41.7
+    },
+    "{\"en\": \"PL2\", \"zh-tw\": \"\"}/{\"en\": \"Area 6\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 6666.7,
+          "samples": [
+            [
+              "16",
+              "2",
+              6666.666666666667
+            ]
+          ],
+          "species": [
+            110
+          ],
+          "type": 7
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 9.8,
+          "fail_rate": 33.3,
+          "type": 2,
+          "values": [
+            9.7,
+            10.3,
+            9.4
+          ]
+        },
+        {
+          "avg": 9.8,
+          "fail_rate": 33.3,
+          "type": 7,
+          "values": [
+            9.9,
+            10.1,
+            9.5
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 33.3
+    },
+    "{\"en\": \"Raw Material Warehouse\", \"zh-tw\": \"\"}/{\"en\": \"Area 1\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 16666.7,
+          "samples": [
+            [
+              "1",
+              "5",
+              16666.66666666667
+            ]
+          ],
+          "species": [
+            107,
+            106
+          ],
+          "type": 5
+        },
+        {
+          "cfu_avg": 3333.3,
+          "samples": [
+            [
+              "2",
+              "1",
+              3333.333333333333
+            ]
+          ],
+          "species": [
+            110
+          ],
+          "type": 1
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 12.4,
+          "fail_rate": 100,
+          "type": 5,
+          "values": [
+            12.8,
+            11.4,
+            13.1
+          ]
+        },
+        {
+          "avg": 11.4,
+          "fail_rate": 100,
+          "type": 6,
+          "values": [
+            11.2,
+            10.7,
+            12.3
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 100
+    },
+    "{\"en\": \"Raw Material Warehouse\", \"zh-tw\": \"\"}/{\"en\": \"Area 2\", \"zh-tw\": \"\"}": {
+      "microbiology_cards": [
+        {
+          "cfu_avg": 18333.3,
+          "samples": [
+            [
+              "3",
+              "7",
+              23333.33333333334
+            ],
+            [
+              "5",
+              "4",
+              13333.33333333333
+            ]
+          ],
+          "species": [
+            107,
+            110
+          ],
+          "type": 6
+        },
+        {
+          "cfu_avg": 6666.7,
+          "samples": [
+            [
+              "4",
+              "2",
+              6666.666666666667
+            ]
+          ],
+          "species": [
+            106
+          ],
+          "type": 1
+        }
+      ],
+      "moisture_cards": [
+        {
+          "avg": 13.5,
+          "fail_rate": 100,
+          "type": 5,
+          "values": [
+            13.5,
+            12.9,
+            14.2
+          ]
+        },
+        {
+          "avg": 9.8,
+          "fail_rate": 33.3,
+          "type": 1,
+          "values": [
+            9.8,
+            9.2,
+            10.4
+          ]
+        },
+        {
+          "avg": 11.8,
+          "fail_rate": 100,
+          "type": 6,
+          "values": [
+            12.1,
+            11.8,
+            11.5
+          ]
+        },
+        {
+          "avg": 9,
+          "fail_rate": 0,
+          "type": 1,
+          "values": [
+            8.9,
+            9.4,
+            8.7
+          ]
+        },
+        {
+          "avg": 9.2,
+          "fail_rate": 0,
+          "type": 1,
+          "values": [
+            9.1,
+            8.8,
+            9.6
+          ]
+        }
+      ],
+      "moisture_total_fail_rate": 46.7
+    }
+  }
+}
