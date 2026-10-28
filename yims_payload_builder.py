@@ -112,7 +112,11 @@ def ratio_percent(numerator: Any, denominator: Any) -> float | int:
     return maybe_int(round(top / bottom * 100, 1)) or 0
 
 
-def failure_rate(values: list[Any], threshold: float = 10) -> float | int:
+# 含水量超標門檻（%）：> 此值算超標。failure_rate 預設與標準化 Excel 紅字標示共用這一份。
+MOISTURE_THRESHOLD = 10
+
+
+def failure_rate(values: list[Any], threshold: float = MOISTURE_THRESHOLD) -> float | int:
     nums = [safe_float(value) for value in values]
     nums = [value for value in nums if value is not None]
     if not nums:

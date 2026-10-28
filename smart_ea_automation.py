@@ -24,7 +24,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.formula.translate import Translator
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from yims_payload_builder import OBJECT_MOISTURE_CATEGORY_IDS, category_id, write_yims_fill_plan
+from yims_payload_builder import MOISTURE_THRESHOLD, OBJECT_MOISTURE_CATEGORY_IDS, category_id, write_yims_fill_plan
 from sheet_names import outside_sheets, resolve_zone_sheets
 from zones import BASE_ZONES, normalize_zone, parse_zone, zone_label, zone_sort_key
 
@@ -674,6 +674,57 @@ def style_sheet(ws) -> None:
         ws.column_dimensions[get_column_letter(col)].width = min(max(max_len + 2, 12), 28)
 
 
+# 標準化 Excel 超標字體標色門檻（出處：references/smart_ea_parameter_definitions.md）
+# 含水量門檻沿用 yims_payload_builder.MOISTURE_THRESHOLD（failure_rate 預設值），不另寫一份。
+HUMIDITY_MAX = 60       # RH <= 60 合格；> 60 紅字
+WIND_MIN = 0.4          # wind >= 0.4 m/s 合格；< 0.4 紅字
+CFU_HIGH = 125_000      # > 125,000 紅字（High）
+CFU_MODERATE = 25_000   # 25,000–125,000 橘字（Moderate，含邊界）
+RED_FONT_COLOR = "FFFF0000"
+ORANGE_FONT_COLOR = "FFFF8C00"
+MOISTURE_COLUMNS = [f"Moisture (%) - {i}" for i in range(1, 6)]
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and not math.isnan(value)
+
+
+def threshold_font_color(sheet_name: str, header: str, value: Any, zone: Any = None) -> str | None:
+    """依門檻回傳字體顏色（RGB hex），不需標色回 None。只判斷數字；室外列濕度/風速跳過。"""
+    if not _is_number(value):
+        return None
+    if sheet_name == "Env. Data":
+        if normalize_zone(zone) == "OUTSIDE":
+            return None
+        if header == "Humidity (%)" and value > HUMIDITY_MAX:
+            return RED_FONT_COLOR
+        if header == "Wind Flow (m/s)" and value < WIND_MIN:
+            return RED_FONT_COLOR
+    elif sheet_name == "Moisture":
+        if header in MOISTURE_COLUMNS and value > MOISTURE_THRESHOLD:
+            return RED_FONT_COLOR
+    elif sheet_name == "CFU" and header == "CFU/m²":
+        if value > CFU_HIGH:
+            return RED_FONT_COLOR
+        if value >= CFU_MODERATE:
+            return ORANGE_FONT_COLOR
+    return None
+
+
+def apply_threshold_font_colors(ws, sheet_name: str) -> None:
+    """只改字體顏色（保留既有 font 其他屬性），不動底色與數值。"""
+    headers = [c.value for c in ws[1]]
+    zone_col = headers.index("Main Zone") + 1 if "Main Zone" in headers else None
+    for row in ws.iter_rows(min_row=2):
+        zone = row[zone_col - 1].value if zone_col else None
+        for cell in row:
+            color = threshold_font_color(sheet_name, headers[cell.column - 1], cell.value, zone)
+            if color:
+                font = copy.copy(cell.font)
+                font.color = color
+                cell.font = font
+
+
 def format_species_cell(value: Any) -> str:
     """把菌種 list 序列化成標準化 Excel 用的單一儲存格字串。"""
     if isinstance(value, list):
@@ -709,6 +760,7 @@ def write_workbook(data: dict[str, list[dict[str, Any]]], ref: ReferenceData, ou
         for row in data[sheet_name]:
             ws.append([_sheet_cell_value(h, row.get(h)) for h in headers])
         style_sheet(ws)
+        apply_threshold_font_colors(ws, sheet_name)
 
     ws = wb.create_sheet("Areas")
     ws.append(["Checking Point", "Report Area", None, "Report Area", "Function", "RMW/PL/FGW/OUTSIDE"])
