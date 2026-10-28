@@ -442,17 +442,21 @@ def mold_species_ids(names: list[Any], mold_options: list[dict[str, Any]] | None
 
 
 def build_moisture_rows(area: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = []
+    # 同類別合併成一張卡（比照微生物分組）：數值依原列序串接，平均與未通過比例以整個類別重算；
+    # 卡片依後台下拉類別 id 升冪，對不到後台類別(id=0)排最後
+    grouped: dict[int, list] = {}
     for item in area.get("moisture", []):
-        values = number_list(item.get("values", []))
+        cat_id = category_id(item.get("category_to_select", ""), OBJECT_MOISTURE_CATEGORY_IDS)
+        grouped.setdefault(cat_id, []).extend(number_list(item.get("values", [])))
+    rows = []
+    for cat_id in sorted(grouped, key=lambda c: c or float("inf")):
+        values = grouped[cat_id]
         row = default_moisture_row()
-        row["object_moisture_content_type"] = category_id(item.get("category_to_select", ""), OBJECT_MOISTURE_CATEGORY_IDS)
+        row["object_moisture_content_type"] = cat_id
         row["object_moisture_contents"] = values or [""]
         row["object_moisture_content_average"] = rounded_avg(values, 1)
         row["object_moisture_content_failure_rate"] = failure_rate(values)
         rows.append(row)
-    # 依後台下拉類別 id 升冪分組（同類放一起、同類內維持原序）；對不到後台類別(id=0)排最後
-    rows.sort(key=lambda r: r["object_moisture_content_type"] or float("inf"))
     return rows or [default_moisture_row()]
 
 
