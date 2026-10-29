@@ -1421,8 +1421,16 @@ def run_automation(vendor_path: Path | str, target_path: Path | str | None, outd
     yims_fill_plan_path = outdir / f"{case_name}_yims_fill_plan.json"
     yims_fill_plan_md_path = outdir / f"{case_name}_yims_fill_plan.md"
 
-    # Moisture 列依後台順序排序後再寫 Excel（只影響 Excel 輸出，payload 另有自己的排序）
-    write_workbook({**data, "Moisture": sort_moisture_rows_for_backend_order(data["Moisture"], ref)}, ref, workbook_path)
+    # Moisture / CFU 列依後台順序排序後再寫 Excel（只影響 Excel 輸出，payload 另有自己的排序）
+    write_workbook(
+        {
+            **data,
+            "Moisture": sort_moisture_rows_for_backend_order(data["Moisture"], ref),
+            "CFU": sort_cfu_rows_for_backend_order(data["CFU"], ref),
+        },
+        ref,
+        workbook_path,
+    )
     # 公式範本版 Excel 已停用（Rose 要求不對外提供，避免同事誤用），不再產生。
     validation = write_validation_report(data, ref, validation_path)
     backend_payload = write_backend_payload(data, ref, case_name, backend_payload_path)
