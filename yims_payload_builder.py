@@ -37,6 +37,17 @@ MICROBIOLOGY_CATEGORY_IDS = {
     "通風與除濕設備": 12,
 }
 
+# 後台微生物下拉選單的「顯示順序」≠ id 數字順序：其他(id 9)顯示在最後，
+# 乘載器具/生產設備/通風與除濕設備(id 10-12)是後來加的、插在其他前面。
+# 排序要照顯示順序（= 分類代碼 a→l 字母序），不能用 id 升冪。
+# 含水量下拉(id 1-8)顯示順序剛好 = id 順序，不需要這張表。
+MICROBIOLOGY_DISPLAY_RANK = {cat_id: rank for rank, cat_id in enumerate([1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 9], start=1)}
+
+
+def microbiology_display_rank(cat_id: int) -> float:
+    """後台微生物類別的下拉顯示序位；對不到後台類別(id=0 或未知)排最後。"""
+    return MICROBIOLOGY_DISPLAY_RANK.get(cat_id, float("inf"))
+
 FALLBACK_MOLD_NAME_TO_ID = {
     "alternaria sp.": 134,
     "aspergillus flavus": 43,
@@ -497,8 +508,8 @@ def build_microbiology_rows(area: dict[str, Any], mold_options: list[dict[str, A
         )
 
     rows = []
-    # 卡片依後台下拉類別 id 升冪（比照含水量），對不到後台類別(id=0)排最後；卡片內物件維持原列序
-    for cat_id in sorted(grouped, key=lambda c: c or float("inf")):
+    # 卡片依後台下拉「顯示順序」排（比照含水量的精神），對不到後台類別(id=0)排最後；卡片內物件維持原列序
+    for cat_id in sorted(grouped, key=microbiology_display_rank):
         row = grouped[cat_id]
         cfus = [obj["microbiology_sampling_object_sampling_cfu"] for obj in row["microbiology_sampling_objects"]]
         row["microbiology_sampling_object_sampling_cfu_average"] = rounded_avg(cfus, 1)

@@ -26,6 +26,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from yims_payload_builder import (
     MICROBIOLOGY_CATEGORY_IDS,
+    microbiology_display_rank,
     MOISTURE_THRESHOLD,
     OBJECT_MOISTURE_CATEGORY_IDS,
     category_id,
@@ -1158,14 +1159,14 @@ def sort_moisture_rows_for_backend_order(rows: list[dict[str, Any]], ref: "Refer
 def sort_cfu_rows_for_backend_order(rows: list[dict[str, Any]], ref: "ReferenceData") -> list[dict[str, Any]]:
     """標準化 Excel 的 CFU 列排序，與後台微生物卡片順序一致，方便逐列對照。
 
-    鍵：區域（倉間 zone 順序 → area 編號）→ 後台類別 id 升冪（對不到 id=0 排最後）→ 原始列序（stable）。
+    鍵：區域（倉間 zone 順序 → area 編號）→ 後台下拉顯示順序（其他最後、對不到的更後）→ 原始列序（stable）。
     只用於「業務 Excel 直跑」寫出的 Excel；run_from_standardized 不重寫 Excel，不會套用。
     """
     def key(row: dict[str, Any]) -> tuple:
         area = normalize_area_name(row.get("Report Area"))
         zone = (ref.area_info.get(area, {}).get("zone") or clean_text(row.get("Main Zone")))
         cat = category_id(backend_class_label(row.get("Classification")), MICROBIOLOGY_CATEGORY_IDS)
-        return (zone_sort_key(zone), sort_area_key(area), cat or float("inf"))
+        return (zone_sort_key(zone), sort_area_key(area), microbiology_display_rank(cat))
 
     return sorted(rows, key=key)
 
