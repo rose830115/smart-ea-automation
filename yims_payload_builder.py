@@ -497,7 +497,9 @@ def build_microbiology_rows(area: dict[str, Any], mold_options: list[dict[str, A
         )
 
     rows = []
-    for row in grouped.values():
+    # 卡片依後台下拉類別 id 升冪（比照含水量），對不到後台類別(id=0)排最後；卡片內物件維持原列序
+    for cat_id in sorted(grouped, key=lambda c: c or float("inf")):
+        row = grouped[cat_id]
         cfus = [obj["microbiology_sampling_object_sampling_cfu"] for obj in row["microbiology_sampling_objects"]]
         row["microbiology_sampling_object_sampling_cfu_average"] = rounded_avg(cfus, 1)
         rows.append(row)
