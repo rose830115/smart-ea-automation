@@ -31,6 +31,7 @@ from yims_payload_builder import (
     category_id,
     write_yims_fill_plan,
 )
+from cp_groups import is_cp_group, split_cp_group
 from sheet_names import outside_sheets, resolve_zone_sheets
 from zones import BASE_ZONES, normalize_zone, parse_zone, zone_label, zone_sort_key
 
@@ -475,8 +476,31 @@ def classify_object(obj: str, kind: str, ref: ReferenceData) -> str:
     return "l.其他"
 
 
+def analyze_cp_group(cp: str, ref: ReferenceData) -> dict[str, Any]:
+    """群組採樣點（`1,2,3`）逐一查 Areas。
+
+    回傳 {"members", "unknown_members", "areas"(對得到的不重複 area, 依成員順序), "area"(全部成員對到同一 area 才有值)}。
+    成員查不到或對到不同 area 時 area 為空字串——不猜。
+    """
+    members = split_cp_group(cp_key(cp))
+    unknown = [m for m in members if cp_key(m) not in ref.area_by_cp]
+    areas: list[str] = []
+    for m in members:
+        area = ref.area_by_cp.get(cp_key(m))
+        if area and area not in areas:
+            areas.append(area)
+    return {
+        "members": members,
+        "unknown_members": unknown,
+        "areas": areas,
+        "area": areas[0] if len(areas) == 1 and not unknown else "",
+    }
+
+
 def report_area_for_cp(cp: str, ref: ReferenceData, fallback_zone: str) -> str:
     key = cp_key(cp)
+    if is_cp_group(key):
+        return analyze_cp_group(key, ref)["area"]
     if key in ref.area_by_cp:
         return ref.area_by_cp[key]
     if fallback_zone == "OUTSIDE":
@@ -910,7 +934,13 @@ def write_template_filled_workbook(data: dict[str, list[dict[str, Any]]], ref: R
 
     if "Areas" in wb.sheetnames:
         ws = wb["Areas"]
-        cp_to_area = {cp_key(row["Checking Point"]): clean_text(row["Report Area"]) for row in data["Env. Data"] if row.get("Checking Point") and row.get("Report Area")}
+        cp_to_area: dict[str, str] = {}
+        for row in data["Env. Data"]:
+            if not (row.get("Checking Point") and row.get("Report Area")):
+                continue
+            # 群組標籤（`1,2,3`）展開成一點一列，維持 Areas 分頁「一點一列」的格式
+            for member in split_cp_group(cp_key(row["Checking Point"])):
+                cp_to_area.setdefault(cp_key(member), clean_text(row["Report Area"]))
         area_to_zone: dict[str, str] = {}
         for row in data["Env. Data"]:
             area = clean_text(row.get("Report Area"))
@@ -1186,6 +1216,42 @@ def append_area_payload(area_map: dict[str, dict[str, Any]], area: str, zone: st
     return area_map[area]
 
 
+def _cp_group_issues(data: dict[str, list[dict[str, Any]]], ref: ReferenceData) -> list[dict[str, Any]]:
+    """群組採樣點對不到區域時，點名原因（成員查不到 / 成員跨 Report Area）。
+
+    只檢查 Report Area 為空的群組列；已有 Report Area 的列（含標準化 Excel 丟回的路徑）不重查。
+    """
+    issues: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for table_name in ["Env. Data", "Moisture", "CFU"]:
+        for row in data[table_name]:
+            cp = cp_key(row.get("Checking Point"))
+            if clean_text(row.get("Report Area")) or not is_cp_group(cp) or cp in seen:
+                continue
+            seen.add(cp)
+            info = analyze_cp_group(cp, ref)
+            if info["unknown_members"]:
+                issues.append(
+                    {
+                        "table": table_name,
+                        "checking_point": row.get("Checking Point"),
+                        "issue": "group_unknown_member",
+                        "detail": f"群組採樣點「{cp}」的成員 {', '.join(info['unknown_members'])} 在 Areas 分頁查不到",
+                    }
+                )
+            elif len(info["areas"]) > 1:
+                detail_map = ", ".join(f"{m}→{ref.area_by_cp[cp_key(m)]}" for m in info["members"])
+                issues.append(
+                    {
+                        "table": table_name,
+                        "checking_point": row.get("Checking Point"),
+                        "issue": "group_area_conflict",
+                        "detail": f"群組採樣點「{cp}」的成員對到不同 Report Area（{detail_map}）；同一格寫在一起的點必須屬於同一區域",
+                    }
+                )
+    return issues
+
+
 def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceData, case_name: str) -> dict[str, Any]:
     indoor_area_map: dict[str, dict[str, Any]] = {}
     outside_area_map: dict[str, dict[str, Any]] = {}
@@ -1283,6 +1349,8 @@ def build_backend_payload(data: dict[str, list[dict[str, Any]]], ref: ReferenceD
                     "issue": "missing_count",
                 }
             )
+
+    quality_issues.extend(_cp_group_issues(data, ref))
 
     indoor_groups = grouped_areas(indoor_area_map)
     quality_issues.extend(_zone_split_issues(indoor_groups))

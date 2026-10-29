@@ -13,6 +13,7 @@ from typing import Iterable
 
 from openpyxl import load_workbook
 
+from cp_groups import split_cp_group
 from sheet_names import missing_zones, resolve_zone_sheets
 from zones import describe_allowed, is_valid_zone, normalize_zone, parse_zone
 
@@ -55,10 +56,41 @@ def validate_vendor_file(vendor_path: Path) -> list[str]:
             # int 轉成 "3" 這種會被當有效（CP_PATTERN match 純數字）
             if isinstance(cp, float) and cp.is_integer():
                 cp_str = str(int(cp))
-            if not CP_PATTERN.fullmatch(cp_str):
+            # 群組採樣點（`1,2,3`）：每個成員都要是合法編號
+            members = split_cp_group(cp_str) or [cp_str]
+            if not all(CP_PATTERN.fullmatch(m) for m in members):
                 violations.append(
                     f"業務檔 sheet「{sheet}」第 {idx} 列 cp 欄位異常：「{cp_str}」"
-                    f"（應為議定編號，如 `3b`、`O1`，不可填功能名稱或合併區）"
+                    f"（應為議定編號，如 `3b`、`O1`，或以逗號寫成同區群組如 `1,2,3`，不可填功能名稱或合併區）"
+                )
+    return violations
+
+
+def validate_cp_groups(vendor_path: Path, target_path: Path) -> list[str]:
+    """群組採樣點對照 Areas：成員查不到、或成員跨不同 Report Area 都擋下（不猜）。"""
+    from smart_ea_automation import analyze_cp_group, cp_key, read_reference
+
+    ref = read_reference(Path(target_path))
+    violations: list[str] = []
+    wb = load_workbook(vendor_path, data_only=True, read_only=True)
+    seen: set[tuple[str, str]] = set()
+    for sheet, _zone in resolve_zone_sheets(wb.sheetnames):
+        for idx, row in enumerate(wb[sheet].iter_rows(min_row=3, values_only=True), start=3):
+            cp = cp_key(row[0]) if row else ""
+            if len(split_cp_group(cp)) < 2 or (sheet, cp) in seen:
+                continue
+            seen.add((sheet, cp))
+            info = analyze_cp_group(cp, ref)
+            if info["unknown_members"]:
+                violations.append(
+                    f"業務檔 sheet「{sheet}」第 {idx} 列群組採樣點「{cp}」："
+                    f"成員 {', '.join(info['unknown_members'])} 在公式範本 Areas 分頁查不到"
+                )
+            elif len(info["areas"]) > 1:
+                mapping = ", ".join(f"{m}→{ref.area_by_cp[cp_key(m)]}" for m in info["members"])
+                violations.append(
+                    f"業務檔 sheet「{sheet}」第 {idx} 列群組採樣點「{cp}」跨不同 Report Area（{mapping}）；"
+                    f"同一格寫在一起的點必須屬於同一個區域"
                 )
     return violations
 
@@ -148,6 +180,11 @@ def validate_inputs(vendor_path: Path | None, target_path: Path | None) -> list[
             violations.extend(validate_vendor_file(Path(vendor_path)))
         except Exception as exc:
             violations.append(f"業務檔讀取失敗：{exc}")
+    if vendor_path is not None and Path(vendor_path).exists() and target_path is not None and Path(target_path).exists():
+        try:
+            violations.extend(validate_cp_groups(Path(vendor_path), Path(target_path)))
+        except Exception as exc:
+            violations.append(f"群組採樣點檢查失敗：{exc}")
     if target_path is not None and Path(target_path).exists():
         try:
             violations.extend(validate_target_file(Path(target_path)))
